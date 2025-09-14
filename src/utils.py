@@ -1,117 +1,156 @@
 """
 Utility functions for FundMate broker statement processor.
-Contains logging setup, file operations, printing helpers, and validation functions.
+Contains helper functions for validation, logging, and display formatting.
 """
 
 import os
-import sys
 import re
 from pathlib import Path
-from typing import List, Dict, Optional
+from datetime import datetime
+from typing import List, Dict, Any, Union
 from loguru import logger
+
 from image_processor import ProcessedResult
 
 
 def setup_logging(log_dir: str, date: str) -> None:
     """
-    Setup logging configuration with date-based directory structure.
+    Setup logging configuration with date-specific log files.
     
     Args:
-        log_dir: Base log directory path
-        date: Date string in YYYY-MM-DD format for log folder
+        log_dir: Directory for log files
+        date: Date string for log organization
     """
     log_path = Path(log_dir) / date
     log_path.mkdir(parents=True, exist_ok=True)
     
-    # Remove default logger
+    log_file = log_path / "fundmate.log"
+    
+    # Remove default handler and add file handler
     logger.remove()
-    
-    # Add console handler with simplified format for INFO, detailed for ERROR
     logger.add(
-        sys.stderr,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
-        level="INFO",
-        filter=lambda record: record["level"].name in ["DEBUG", "INFO", "SUCCESS", "WARNING"]
-    )
-    
-    # Add console handler for ERROR with simplified format
-    logger.add(
-        sys.stderr,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
-        level="ERROR"
-    )
-    
-    # Add file handler for all logs with simplified format
-    logger.add(
-        log_path / "fundmate.log",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}",
-        level="DEBUG",
-        rotation="10 MB",
-        retention="7 days",
-        compression="zip"
-    )
-    
-    # Add separate error log file with simplified format
-    logger.add(
-        log_path / "errors.log",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}",
-        level="ERROR",
-        rotation="5 MB",
+        str(log_file),
+        rotation="1 day",
         retention="30 days",
-        compression="zip"
+        level="DEBUG",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
+        backtrace=True,
+        diagnose=True
     )
     
     logger.info(f"Logging initialized for date: {date}")
     logger.info(f"Log files saved to: {log_path}")
 
 
-def validate_date_format(date: str) -> bool:
+def validate_date_format(date_str: str) -> bool:
     """
     Validate date string format (YYYY-MM-DD).
     
     Args:
-        date: Date string to validate
+        date_str: Date string to validate
         
     Returns:
         bool: True if valid format, False otherwise
     """
-    date_pattern = r'^\d{4}-\d{2}-\d{2}$'
-    return bool(re.match(date_pattern, date))
+    if not date_str:
+        return False
+    
+    try:
+        datetime.strptime(date_str, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
 
 
-def check_images_exist(dated_output_folder: str, broker: Optional[str] = None) -> Dict[str, bool]:
+def validate_broker_folder(folder_path: str) -> bool:
     """
-    Check which brokers already have converted images.
+    Validate that broker folder exists.
     
     Args:
-        dated_output_folder: Output folder with date subfolder
-        broker: Specific broker to check, or None for all
+        folder_path: Path to broker folder
         
     Returns:
-        Dict[str, bool]: Dictionary mapping broker names to existence status
+        bool: True if folder exists, False otherwise
     """
-    output_path = Path(dated_output_folder)
+    return os.path.exists(folder_path) and os.path.isdir(folder_path)
+
+
+def print_processing_info(broker_folder: str, date: str, broker: str = None, 
+                         output: str = None, force: bool = False) -> None:
+    """
+    Print processing information banner.
+    
+    Args:
+        broker_folder: Path to broker folder
+        date: Processing date
+        broker: Specific broker filter (if any)
+        output: Output directory
+        force: Force re-conversion flag
+    """
+    print("=" * 60)
+    print("FundMate - Broker Statement Processor")
+    print("=" * 60)
+    print(f"PDF Folder: {broker_folder}")
+    print(f"Date: {date}")
+    print(f"Broker: {broker if broker else 'All brokers'}")
+    print(f"Output: {output}")
+    print(f"Force Re-conversion: {'Yes' if force else 'No'}")
+    print("=" * 60)
+    print()
+
+
+def check_images_exist(output_folder: str, broker_filter: str = None) -> Dict[str, bool]:
+    """
+    Check if images already exist for brokers.
+    
+    Args:
+        output_folder: Output directory for images
+        broker_filter: Specific broker to check (optional)
+        
+    Returns:
+        Dict[str, bool]: Mapping of broker names to existence status
+    """
+    output_path = Path(output_folder)
     existing_images = {}
     
     if not output_path.exists():
+        # Create output directory if it doesn't exist
+        output_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Created output directory: {output_folder}")
         return {}
     
-    # Check each broker subdirectory
-    for subdir in output_path.iterdir():
-        if not subdir.is_dir():
+    for broker_dir in output_path.iterdir():
+        if not broker_dir.is_dir():
             continue
             
-        broker_name = subdir.name
+        broker_name = broker_dir.name
         
-        # Filter by specific broker if provided
-        if broker and broker_name.upper() != broker.upper():
+        # Filter by broker if specified
+        if broker_filter and broker_name.upper() != broker_filter.upper():
             continue
-        
-        # Check for any image files
-        image_files = list(subdir.glob("*.png")) + list(subdir.glob("*.jpg"))
+            
+        # Check for image files in broker directory
+        image_files = list(broker_dir.glob("*.png")) + list(broker_dir.glob("*.jpg"))
         existing_images[broker_name] = len(image_files) > 0
     
     return existing_images
+
+
+def ensure_output_directories() -> None:
+    """
+    Ensure all required output directories exist.
+    Creates the standard FundMate output directory structure.
+    """
+    directories = [
+        Path("./out"),
+        Path("./out/pictures"),
+        Path("./out/result"),
+        Path("./log")
+    ]
+    
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Ensured directory exists: {directory}")
 
 
 def print_asset_summary(results: List[ProcessedResult]) -> None:
@@ -164,6 +203,7 @@ def print_asset_summary(results: List[ProcessedResult]) -> None:
             total_type = cash_data.get('Total_type', 'USD')
             summary_lines.append(f"      Original Cash: {cash_data['Total']:,} {total_type}")
         else:
+            # Show individual currency details
             cash_details = []
             if cash_data.get('CNY') is not None:
                 cash_details.append(f"CNY: {cash_data['CNY']:,.2f}")
@@ -174,28 +214,27 @@ def print_asset_summary(results: List[ProcessedResult]) -> None:
             if cash_details:
                 summary_lines.append(f"      Cash Details: {', '.join(cash_details)}")
         
-        # Display position summary
+        # Display position information
         if result.position_values:
             pv = result.position_values
             successful = pv.get('successful_prices', 0)
-            failed = pv.get('failed_prices', 0) 
+            failed = pv.get('failed_prices', 0)
             total_stocks = successful + failed
             summary_lines.append(f"      Position Details: {successful}/{total_stocks} stocks priced")
             
             if failed > 0:
                 summary_lines.append(f"      ⚠️  {failed} stocks failed to get price")
     
+    # Add totals
     summary_lines.append("\n" + "-" * 80)
     summary_lines.append(f"[TOTAL] Total Cash: ${total_cash_usd:,.2f} USD")
     summary_lines.append(f"[TOTAL] Total Positions: ${total_positions_usd:,.2f} USD")
     summary_lines.append(f"[TOTAL] Grand Total: ${total_cash_usd + total_positions_usd:,.2f} USD")
     summary_lines.append("=" * 80)
     
-    # Log the entire summary as one message
+    # Print and log the summary
     summary_text = "\n".join(summary_lines)
     logger.info(f"Asset Summary Report:\n{summary_text}")
-    
-    # Also print to console for immediate visibility
     print(summary_text)
 
 
@@ -204,45 +243,3 @@ def print_cash_summary(results: List[ProcessedResult]) -> None:
     Legacy function - calls new print_asset_summary for backward compatibility.
     """
     print_asset_summary(results)
-
-
-def print_processing_info(broker_folder: str, date: str, broker: Optional[str], 
-                         output: str, force: bool) -> None:
-    """
-    Print processing information banner.
-    
-    Args:
-        broker_folder: Path to broker statements folder
-        date: Processing date
-        broker: Specific broker name or None for all
-        output: Output directory path
-        force: Whether force re-conversion is enabled
-    """
-    info_lines = [
-        "=" * 60,
-        "FundMate - Broker Statement Processor",
-        "=" * 60,
-        f"PDF Folder: {broker_folder}",
-        f"Date: {date}",
-        f"Broker: {broker or 'All brokers'}",
-        f"Output: {output}",
-        f"Force Re-conversion: {'Yes' if force else 'No'}",
-        "=" * 60
-    ]
-    
-    # Print to console for immediate visibility
-    for line in info_lines:
-        print(line)
-
-
-def validate_broker_folder(broker_folder: str) -> bool:
-    """
-    Validate that the broker folder exists.
-    
-    Args:
-        broker_folder: Path to validate
-        
-    Returns:
-        bool: True if folder exists, False otherwise
-    """
-    return os.path.exists(broker_folder) 

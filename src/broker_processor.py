@@ -64,6 +64,8 @@ class BrokerStatementProcessor:
         
         # Step 4: Create dated output directory
         dated_output_folder = str(Path(image_output_folder) / date)
+        # Ensure output directory exists
+        Path(dated_output_folder).mkdir(parents=True, exist_ok=True)
         logger.info(f"Output directory: {dated_output_folder}")
         
         # Step 5: Check existing images if not forcing

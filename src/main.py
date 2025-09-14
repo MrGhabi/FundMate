@@ -5,11 +5,12 @@ Main entry point with command-line interface for processing broker statements.
 
 import sys
 import argparse
+from pathlib import Path
 from loguru import logger
 
 from broker_processor import BrokerStatementProcessor
 from data_persistence import save_processing_results
-from utils import validate_broker_folder, print_processing_info
+from utils import validate_broker_folder, print_processing_info, ensure_output_directories
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -99,6 +100,9 @@ def main():
         force=args.force
     )
     
+    # Ensure output directories exist
+    ensure_output_directories()
+    
     # Process broker statements
     try:
         processor = BrokerStatementProcessor()
@@ -115,11 +119,15 @@ def main():
         if processed_results and exchange_rates and date:
             logger.info("Saving processed data to persistent storage...")
             try:
+                # Ensure result output directory exists
+                result_output_dir = Path("./out/result")
+                result_output_dir.mkdir(parents=True, exist_ok=True)
+                
                 saved_files = save_processing_results(
                     results=processed_results, 
                     date=date, 
                     exchange_rates=exchange_rates,
-                    output_dir="/data/ghabi/FundMate/out/result"
+                    output_dir=str(result_output_dir)
                 )
                 logger.success(f"Data persistence completed. Files saved: {list(saved_files.keys())}")
             except Exception as e:
