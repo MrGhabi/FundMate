@@ -92,12 +92,20 @@ class DataPersistence:
             
             # Extract positions data
             for position in result.positions:
+                # Convert holding to integer, handle string values with commas
+                holding_value = position['Holding']
+                if isinstance(holding_value, str):
+                    # Remove commas and convert to int
+                    holding_value = int(holding_value.replace(',', ''))
+                else:
+                    holding_value = int(holding_value)
+                
                 position_row = {
                     'date': date,
                     'broker_name': result.broker_name,
                     'account_id': result.account_id,
                     'stock_code': position['StockCode'],
-                    'holding': position['Holding'],
+                    'holding': holding_value,
                     'timestamp': datetime.now().isoformat()
                 }
                 positions_data.append(position_row)

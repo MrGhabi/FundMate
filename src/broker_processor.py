@@ -79,8 +79,10 @@ class BrokerStatementProcessor:
         
         # Step 6: Convert PDFs to images
         logger.info("Converting PDFs to images...")
+        # Use dated broker folder for PDF processing to match Excel processing
+        dated_broker_folder = str(Path(broker_folder) / date)
         try:
-            convert_pdf_directory(broker_folder, dated_output_folder, broker_filter=broker, force=force)
+            convert_pdf_directory(dated_broker_folder, dated_output_folder, broker_filter=broker, force=force)
             logger.success("PDF conversion completed")
         except Exception as e:
             logger.error(f"PDF conversion failed: {e}")

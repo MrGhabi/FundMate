@@ -26,8 +26,18 @@ def setup_logging(log_dir: str, date: str) -> None:
     
     log_file = log_path / "fundmate.log"
     
-    # Remove default handler and add file handler
+    # Remove default handler and add both console and file handlers
     logger.remove()
+    
+    # Add console handler
+    logger.add(
+        lambda msg: print(msg, end=""),
+        level="INFO",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}\n",
+        colorize=False
+    )
+    
+    # Add file handler
     logger.add(
         str(log_file),
         rotation="1 day",

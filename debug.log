@@ -1,0 +1,37 @@
+2025-09-14 19:32:46.238 | DEBUG    | utils:ensure_output_directories:153 - Ensured directory exists: out
+2025-09-14 19:32:46.239 | DEBUG    | utils:ensure_output_directories:153 - Ensured directory exists: out/pictures
+2025-09-14 19:32:46.239 | DEBUG    | utils:ensure_output_directories:153 - Ensured directory exists: out/result
+2025-09-14 19:32:46.239 | DEBUG    | utils:ensure_output_directories:153 - Ensured directory exists: log
+============================================================
+FundMate - Broker Statement Processor
+============================================================
+PDF Folder: ./data/20250228_Statement/
+Date: 2025-02-28
+Broker: All brokers
+Output: ./out/pictures
+Force Re-conversion: No
+============================================================
+
+================================================================================
+Complete Asset Summary (USD)
+================================================================================
+
+📊 BROKERS PROCESSED:
+   📊 Excel MS/EXCEL
+   Total: 1 accounts
+
+--------------------------------------------------------------------------------
+
+[BROKER] MS/EXCEL:
+   💰 Cash Total: $0.00
+   📈 Position Total: $0.00
+   🏦 Account Total: $0.00
+      Original Cash: 0.0 USD
+      Position Details: 0/8 stocks priced
+      ⚠️  8 stocks failed to get price
+
+--------------------------------------------------------------------------------
+[TOTAL] Total Cash: $0.00 USD
+[TOTAL] Total Positions: $0.00 USD
+[TOTAL] Grand Total: $0.00 USD
+================================================================================
