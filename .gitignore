@@ -1,8 +1,21 @@
+# Environment and secrets
 .env*
+
+# Generated images
 *.png
-data/
-log/
-out/
+
+# Data directories - keep structure, ignore content
+data/*
+!data/.gitkeep
+log/*
+!log/.gitkeep
+out/*
+!out/.gitkeep
+
+# Temporary files
 temp/
-src/script
-src/__pycache__
+
+# Script directory and Python cache
+src/script/
+src/__pycache__/
+__pycache__/
