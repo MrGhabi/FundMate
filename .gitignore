@@ -1,0 +1,8 @@
+.env*
+*.png
+data/
+log/
+out/
+temp/
+src/script
+src/__pycache__
