@@ -2,7 +2,7 @@ PROMPT_TEMPLATES = {
     "CICC": 
     [{"type": "text", 
       "text": """
-      Please extract the 'Ledger Balance' and corresponding currency type 'CCY' from the 'Cash Balance for' section in these screenshots.
+      Please extract the 'Ledger Balance' and corresponding currency type 'CCY' from the 'Cash Balance for' section in this PDF document.
       The 'Cash Value' in this section corresponds to 'Total' in the output, with 'Total_type' being 'HKD'.
       Then, from the 'Securities Holding for' section, for each holding, extract the 'Sec.code', 'Holding C/F', 'Closing Price', and 'CCY'.
       """}],
@@ -10,7 +10,7 @@ PROMPT_TEMPLATES = {
     "First Shanghai": 
     [{"type": "text", 
       "text": """
-      Please extract the 'Ledger Balance Original Currency' and corresponding currency type 'Currency' from the 'Cash Holding' section in these screenshots.
+      Please extract the 'Ledger Balance Original Currency' and corresponding currency type 'Currency' from the 'Cash Holding' section in this PDF document.
       Then, from the 'Securities Holding' section, for each stock, extract the 'Stock Code', 'Month End Ledger Balance', and 'Closing Price'. The currency for each stock should be identified from its market group header (e.g., the currency is 'USD' for stocks under the 'US Market - USD' heading).
       If 'No Securities Holding' is written under a market group, it means there are no positions for that market.
       """}],
@@ -18,14 +18,14 @@ PROMPT_TEMPLATES = {
     "HTI": 
     [{"type": "text", 
       "text": """
-      Please extract the 'Balance C/F' and its corresponding 'Currency' from the 'Balance Summary' table in these screenshots. 'Total HKD Eqv.' in this table should be treated as 'Total'.
+      Please extract the 'Balance C/F' and its corresponding 'Currency' from the 'Balance Summary' table in this PDF document. 'Total HKD Eqv.' in this table should be treated as 'Total'.
       Then, from the 'Equity Portfolio Summary' section, for each stock, extract the following: 'Sellable Quantity', 'Closing Price', and the 'StockCode'. Both the 'StockCode' and its 'Currency' can be found in the 'Market / Description' column (the currency is indicated within parentheses, like '(HKD)').
       """}],
 
     "HUATAI": 
     [{"type": "text", 
       "text": """
-      Please read the Cash section in the 'Portfolio Summary' table in these screenshots, extract the 'Net Balance' section and corresponding currency type.
+      Please read the Cash section in the 'Portfolio Summary' table in this PDF document, extract the 'Net Balance' section and corresponding currency type.
       Then, from the 'Stock/Product Position' section, for each stock, extract the 'Code', 'Net Balance', and 'Closing Price'. The currency for each stock should be identified from its market group header row above it (e.g., extract 'USD' from the 'US - U.S. STOCK (USD)' row).
       """}],
 
@@ -43,7 +43,7 @@ PROMPT_TEMPLATES = {
     "LB": 
     [{"type": "text", 
       "text": """
-      Please extract the 'Closing Balance' values from the 'Balance Details' section in these screenshots:
+      Please extract the 'Closing Balance' values from the 'Balance Details' section in this PDF document:
       - For the 'HKD' row, extract the 'Closing Balance' as output 'HKD'.
       - For the 'USD' row, extract the 'Closing Balance' as output 'USD'.
       - For the 'Total (HKD)' row, extract the 'Closing Balance (HKD)' as output 'Total'.
@@ -54,7 +54,7 @@ PROMPT_TEMPLATES = {
     "MOOMOO": 
     [{"type": "text", 
       "text": """
-      Please extract the 'Ending Cash' from the 'USD', 'HKD' and 'CNH' tables in the 'Changes in Cash' section of these screenshots,
+      Please extract the 'Ending Cash' from the 'USD', 'HKD' and 'CNH' tables in the 'Changes in Cash' section of this PDF document,
       as the output 'USD', 'HKD' and 'CNY' respectively. Set 'Total' and 'Total_type' in the output to None.
       
       Then, from the 'Ending Positions' section, extract data from BOTH tables:
@@ -80,7 +80,7 @@ PROMPT_TEMPLATES = {
     "SDICS": 
     [{"type": "text", 
       "text": """
-      Please extract the 'LEDGER BALANCE' corresponding to 'HKD', 'USD' and 'HKD EQD' from the 'Account Summary' table in these screenshots,
+      Please extract the 'LEDGER BALANCE' corresponding to 'HKD', 'USD' and 'HKD EQD' from the 'Account Summary' table in this PDF document,
       as the output 'HKD', 'USD' and 'Total' respectively.
       Then, from the 'Equities Asset Summary' section, for each stock, extract the 'Code', 'CLOSING BAL' (Closing Balance), 'CLOSING PRICE', and 'CCY' (Currency).
       """}],
@@ -88,14 +88,14 @@ PROMPT_TEMPLATES = {
     "TFI": 
     [{"type": "text", 
       "text": """
-      Please extract the 'Ledger Balance' section and corresponding currency type 'Currency' from the 'Daily Account Balance' table in these screenshots.
+      Please extract the 'Ledger Balance' section and corresponding currency type 'Currency' from the 'Daily Account Balance' table in this PDF document.
       Then, from the '證券組合(Securities Position/Portfolio Holding)' section, for each stock, extract the stock code from "股票代號及名稱 Stock Code & Name", quantity from '結存股數 Closing Qty', and price from '收市價 Closing Price'. The currency for each stock should be identified from its market group header (e.g., the currency is 'HKD' for stocks under 'HK-HKD:', and 'USD' for stocks under 'USA-USD:').
       """}],
 
     "TIGER": 
     [{"type": "text", 
       "text": """
-      Please extract the 'Total' values corresponding to 'Ending Cash' from the 'Currency: USD' and 'Currency: HKD' tables in these screenshots,
+      Please extract the 'Total' values corresponding to 'Ending Cash' from the 'Currency: USD' and 'Currency: HKD' tables in this PDF document,
       as the output 'USD' and 'HKD' respectively. Set 'Total' and 'Total_type' in the output to None.
       Then, from the 'Holdings' section, for each holding (including both 'Stock' and 'Option'), extract the 'Symbol' (as 'Stock Code'), 'Quantity' (as 'Holding'), 'Close Price', 'Currency', and 'Multiplier' (if visible in the table, extract the exact number; if not visible, set to null).
       """}]
