@@ -7,24 +7,167 @@ import os
 import re
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, TYPE_CHECKING
 from loguru import logger
 
-from image_processor import ProcessedResult
+if TYPE_CHECKING:
+    from broker_processor import ProcessedResult
+
+
+def _identify_hk_option(stock_code: str, raw_description: str = None) -> bool:
+    """
+    Identify if this is a Hong Kong option based on code pattern.
+    
+    NOTE: Fallback mechanism (executes when broker doesn't provide multiplier):
+    1. TIGER broker provides multiplier → this function is bypassed (Priority 1)
+    2. Other brokers without multiplier → this function executes (Priority 4)
+    3. Used to determine if we should query Futu API for HK option multiplier
+    
+    Updated to support modern HKATS formats like "CLI 250929 19.00 CALL".
+    """
+    if not stock_code and not raw_description:
+        return False
+    
+    # Check for HKATS code pattern: 3 letters + 6 or 8 digits
+    # Examples: "CLI 250929 19.00 CALL" or "(CLI.HK 20250929 CALL 19.0)"
+    import re
+    description = raw_description or stock_code or ""
+    if re.search(r'[A-Z]{3}[\s.]+(?:HK\s+)?\d{6,8}', description):
+        return True
+    
+    # Legacy pattern: "XXXX OPTION" (no longer used but kept for compatibility)
+    for text in [stock_code, raw_description]:
+        if text and text.endswith(" OPTION"):
+            underlying_code = text.replace(" OPTION", "").strip()
+            # HK stock codes: 4 digits, start with 0-3, 9
+            if (len(underlying_code) == 4 and 
+                underlying_code.isdigit() and
+                underlying_code.startswith(('0', '1', '2', '3', '9'))):
+                return True
+    
+    return False
+
+
+def is_option_contract(stock_code: str, raw_description: str = None) -> bool:
+    """
+    Simple option detection - options have obvious names like "CALL", "PUT", "OPTION"
+    """
+    # Check stock code for option keywords
+    if stock_code and isinstance(stock_code, str):
+        upper_code = stock_code.upper()
+        if any(keyword in upper_code for keyword in ['OPTION', 'CALL', 'PUT']):
+            return True
+        # Also check for single-letter C/P at the end (common in option symbols)
+        if upper_code.endswith(' C') or upper_code.endswith(' P'):
+            return True
+    
+    # Check raw description for option keywords  
+    if raw_description and isinstance(raw_description, str):
+        upper_desc = raw_description.upper()
+        if any(keyword in upper_desc for keyword in ['OPTION', 'CALL', 'PUT']):
+            return True
+    
+    return False
+
+
+def get_option_multiplier(stock_code: str, raw_description: str = None, broker_multiplier: int = None) -> int:
+    """
+    Get the correct multiplier for position value calculation
+    
+    Args:
+        stock_code: The stock code/symbol
+        raw_description: Optional raw description from broker
+        broker_multiplier: Multiplier from broker statement (highest priority)
+        
+    Returns:
+        1 for stocks and OTC options, real multiplier for HK options from Futu API, 
+        100 for other standard exchange options
+    """
+    # Priority 1: Use broker-provided multiplier if available
+    if broker_multiplier is not None and broker_multiplier > 0:
+        logger.debug(f"Using broker-provided multiplier: {broker_multiplier}")
+        return int(broker_multiplier)
+    
+    # Check if it's an option first
+    if not is_option_contract(stock_code, raw_description):
+        return 1  # Regular stock
+    
+    # Check for OTC options FIRST - multiplier is always 1
+    if stock_code and isinstance(stock_code, str):
+        upper_code = stock_code.upper()
+        if 'OTC' in upper_code:
+            return 1  # OTC option
+    
+    if raw_description and isinstance(raw_description, str):
+        upper_desc = raw_description.upper()
+        if 'OTC' in upper_desc:
+            return 1  # OTC option
+    
+    # Check for HK options (non-OTC)
+    if _identify_hk_option(stock_code, raw_description):
+        # LIMITATION: Cannot query Futu API for multiplier
+        # - Futu API needs stock code (HK.00700), but we only have HKATS code (CLI)
+        # - No mapping exists: CLI → stock code
+        # - Solution: Use 100 as conservative fallback
+        # - RELY ON broker-provided multiplier (Priority 1 above)
+        logger.warning(
+            f"HK option detected but cannot get multiplier from Futu API: {stock_code or raw_description}. "
+            f"HKATS code has no mapping to stock code. Using fallback multiplier=100. "
+            f"Recommend broker to provide 'Multiplier' field in statement."
+        )
+        return 100
+    
+    # Standard exchange option - multiplier is 100
+    return 100
+
+
+def calculate_position_value(price: float, holding: int, stock_code: str, 
+                            raw_description: str = None, broker_multiplier: int = None) -> tuple:
+    """
+    Unified position value calculation - single source of truth
+    
+    Args:
+        price: Price per share/contract
+        holding: Number of shares/contracts
+        stock_code: Stock code/symbol
+        raw_description: Optional raw description from broker
+        broker_multiplier: Optional multiplier from broker statement
+    
+    Returns:
+        Tuple of (position_value, multiplier_used)
+    """
+    if price is None or price <= 0:
+        return (0.0, 1)
+    
+    multiplier = get_option_multiplier(stock_code, raw_description, broker_multiplier)
+    position_value = price * holding * multiplier
+    
+    if multiplier > 1:
+        logger.debug(f"Applied {multiplier}x option multiplier for {stock_code}: "
+                    f"{holding} × {price} × {multiplier} = {position_value}")
+    else:
+        logger.debug(f"Stock/OTC calculation for {stock_code}: "
+                    f"{holding} × {price} = {position_value}")
+    
+    return (position_value, multiplier)
 
 
 def setup_logging(log_dir: str, date: str) -> None:
     """
-    Setup logging configuration with date-specific log files.
+    Setup logging configuration with timestamped log files.
     
     Args:
         log_dir: Directory for log files
         date: Date string for log organization
     """
+    from datetime import datetime
+    
     log_path = Path(log_dir) / date
     log_path.mkdir(parents=True, exist_ok=True)
     
-    log_file = log_path / "fundmate.log"
+    # Create timestamped log file name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = log_path / f"fundmate_{timestamp}.log"
     
     # Remove default handler and add both console and file handlers
     logger.remove()
@@ -37,11 +180,9 @@ def setup_logging(log_dir: str, date: str) -> None:
         colorize=False
     )
     
-    # Add file handler
+    # Add file handler with timestamped name (no rotation needed)
     logger.add(
         str(log_file),
-        rotation="1 day",
-        retention="30 days",
         level="DEBUG",
         format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
         backtrace=True,
@@ -49,7 +190,7 @@ def setup_logging(log_dir: str, date: str) -> None:
     )
     
     logger.info(f"Logging initialized for date: {date}")
-    logger.info(f"Log files saved to: {log_path}")
+    logger.info(f"Log file: {log_file}")
 
 
 def validate_date_format(date_str: str) -> bool:
@@ -149,21 +290,13 @@ def check_images_exist(output_folder: str, broker_filter: str = None) -> Dict[st
 def ensure_output_directories() -> None:
     """
     Ensure all required output directories exist.
-    Creates the standard FundMate output directory structure.
+    Now uses centralized configuration.
     """
-    directories = [
-        Path("./out"),
-        Path("./out/pictures"),
-        Path("./out/result"),
-        Path("./log")
-    ]
-    
-    for directory in directories:
-        directory.mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Ensured directory exists: {directory}")
+    from config import settings
+    settings.ensure_directories()
 
 
-def print_asset_summary(results: List[ProcessedResult]) -> None:
+def print_asset_summary(results: List["ProcessedResult"], date: str = None) -> None:
     """
     Print complete asset summary (cash + positions) for all processed brokers.
     
@@ -235,11 +368,128 @@ def print_asset_summary(results: List[ProcessedResult]) -> None:
             if failed > 0:
                 summary_lines.append(f"      ⚠️  {failed} stocks failed to get price")
     
+    # Cross-broker position aggregation (optimized with pre-calculated prices)
+    summary_lines.append("\n" + "-" * 80)
+    summary_lines.append("📊 CROSS-BROKER POSITION SUMMARY:")
+    
+    # Aggregate positions by stock code - simplified since prices are pre-calculated
+    position_aggregation = {}
+    for result in results:
+        broker_display = f"{result.broker_name}/{result.account_id}" if result.account_id != 'DEFAULT' else result.broker_name
+        if result.account_id == 'EXCEL':
+            broker_display = result.broker_name
+            
+        for position in result.positions:
+            # For options, use RawDescription for unique identification
+            # Otherwise different option contracts with same underlying get merged
+            stock_code = position['StockCode']
+            if 'OPTION' in stock_code.upper() and position.get('RawDescription'):
+                # Use full option description to distinguish different contracts
+                unique_key = position['RawDescription']
+            else:
+                # Use regular stock code for stocks
+                unique_key = stock_code
+            holding = position['Holding']
+            # Ensure holding is numeric
+            try:
+                holding_num = int(holding) if isinstance(holding, (int, float)) else int(float(str(holding).replace(',', '')))
+            except (ValueError, TypeError):
+                holding_num = 0
+                
+            # Use optimized price data if available
+            final_price = position.get('FinalPrice')
+            final_price_source = position.get('FinalPriceSource', 'N/A')
+            price_currency = position.get('OptimizedPriceCurrency') or position.get('PriceCurrency', 'USD')
+            
+            if unique_key not in position_aggregation:
+                position_aggregation[unique_key] = {
+                    'total_holding': 0,
+                    'brokers': [],
+                    'final_price': final_price,
+                    'price_source': final_price_source,
+                    'price_currency': price_currency,
+                    'total_value_usd': 0.0
+                }
+            
+            # Add holding and broker info
+            position_aggregation[unique_key]['total_holding'] += holding_num
+            position_aggregation[unique_key]['brokers'].append(f"{broker_display}: {holding_num:,}")
+            
+            # Add position value with currency conversion (preserve original separate calculation logic)
+            if final_price is not None:
+                # Calculate individual position value with correct multiplier
+                multiplier = get_option_multiplier(stock_code, position.get('RawDescription'), position.get('Multiplier'))
+                position_value_original = final_price * holding_num * multiplier
+                
+                if multiplier > 1:
+                    logger.debug(f"Applied {multiplier}x option multiplier for {stock_code}: {holding_num} × {final_price} × {multiplier} = {position_value_original}")
+                else:
+                    logger.debug(f"Stock/OTC calculation for {stock_code}: {holding_num} × {final_price} = {position_value_original}")
+                
+                # Convert to USD if needed
+                if price_currency != 'USD':
+                    try:
+                        from exchange_rate_handler import exchange_handler
+                        usd_rate = exchange_handler.get_rate_lazy(price_currency, 'USD', date)
+                        position_value_usd = position_value_original * usd_rate
+                    except Exception as e:
+                        logger.warning(f"Currency conversion failed for {price_currency}→USD: {e}")
+                        logger.warning(f"Using original {price_currency} value without conversion")
+                        position_value_usd = position_value_original  # Keep original value, mark as unconverted
+                        price_currency = f"{price_currency}_UNCONVERTED"  # Mark for display
+                else:
+                    position_value_usd = position_value_original
+                
+                # Accumulate individual position values (this preserves the separate calculation logic)
+                position_aggregation[unique_key]['total_value_usd'] += position_value_usd
+    
+    # Display aggregated positions - much simpler now
+    if position_aggregation:
+        summary_lines.append("")
+        total_portfolio_value = 0.0
+        for unique_key in sorted(position_aggregation.keys()):
+            agg = position_aggregation[unique_key]
+            total_holding = agg['total_holding']
+            brokers_str = ", ".join(agg['brokers'])
+            
+            # Display price and value (using accumulated individual calculations)
+            if agg['final_price'] is not None:
+                if agg['price_currency'] != 'USD' and not agg['price_currency'].endswith('_UNCONVERTED'):
+                    try:
+                        from exchange_rate_handler import exchange_handler
+                        usd_rate = exchange_handler.get_rate_lazy(agg['price_currency'], 'USD', date)
+                        usd_price = agg['final_price'] * usd_rate
+                        price_display = f"{agg['final_price']:.2f} {agg['price_currency']} (${usd_price:.2f} USD, {agg['price_source']})"
+                    except Exception as e:
+                        logger.warning(f"Display conversion failed for {agg['price_currency']}: {e}")
+                        price_display = f"{agg['final_price']:.2f} {agg['price_currency']} (Conversion Failed, {agg['price_source']})"
+                elif agg['price_currency'].endswith('_UNCONVERTED'):
+                    original_currency = agg['price_currency'].replace('_UNCONVERTED', '')
+                    price_display = f"{agg['final_price']:.2f} {original_currency} (No USD Conversion, {agg['price_source']})"
+                else:
+                    price_display = f"{agg['final_price']:.2f} {agg['price_currency']} ({agg['price_source']})"
+                
+                # Use the accumulated value from individual calculations
+                value_display = f"[${agg['total_value_usd']:,.2f}]"
+                total_portfolio_value += agg['total_value_usd']
+            else:
+                price_display = "N/A"
+                value_display = "[$0.00]"
+            
+            # Clean display format
+            summary_lines.append(f"   {unique_key}: {total_holding:,} shares (from: {brokers_str})")
+            summary_lines.append(f"     → Price: {price_display} {value_display}")
+        
+        # Add portfolio total
+        summary_lines.append(f"\n   📊 Cross-Broker Portfolio Value: ${total_portfolio_value:,.2f} USD")
+    else:
+        summary_lines.append("   No positions found across all brokers")
+    
     # Add totals
     summary_lines.append("\n" + "-" * 80)
     summary_lines.append(f"[TOTAL] Total Cash: ${total_cash_usd:,.2f} USD")
-    summary_lines.append(f"[TOTAL] Total Positions: ${total_positions_usd:,.2f} USD")
-    summary_lines.append(f"[TOTAL] Grand Total: ${total_cash_usd + total_positions_usd:,.2f} USD")
+    summary_lines.append(f"[TOTAL] Total Positions: ${total_portfolio_value:,.2f} USD")
+    summary_lines.append(f"[TOTAL] Grand Total: ${total_cash_usd + total_portfolio_value:,.2f} USD")
     summary_lines.append("=" * 80)
     
     # Print and log the summary
@@ -248,8 +498,31 @@ def print_asset_summary(results: List[ProcessedResult]) -> None:
     print(summary_text)
 
 
-def print_cash_summary(results: List[ProcessedResult]) -> None:
+# ============================================================================
+# Money Market Fund Detection
+# ============================================================================
+
+def is_money_market_fund(description: str = None) -> bool:
     """
-    Legacy function - calls new print_asset_summary for backward compatibility.
+    Detect if a security is a Money Market Fund
+    
+    Simply check if 'money market fund' appears in description (case-insensitive)
+    
+    Args:
+        description: Product name/description
+    
+    Returns:
+        True if it's a money market fund, False otherwise
+    
+    Examples:
+        >>> is_money_market_fund('CSOP USD Money Market Fund')
+        True
+        >>> is_money_market_fund('Apple Inc')
+        False
+        >>> is_money_market_fund(None)
+        False
     """
-    print_asset_summary(results)
+    if not description:
+        return False
+    
+    return 'money market fund' in description.lower()

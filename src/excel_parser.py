@@ -24,6 +24,8 @@ class OptionPosition:
     option_type: Optional[str] = None  # Call/Put
     buy_sell: Optional[str] = None     # Buy/Sell
     underlyer: Optional[str] = None
+    broker_price: Optional[float] = None  # Broker option price
+    price_currency: Optional[str] = None  # Price currency
 
 
 class ExcelPositionParser:
@@ -70,6 +72,10 @@ class ExcelPositionParser:
                 option_type = str(row.iloc[10]) if not pd.isna(row.iloc[10]) else None  # Call/Put (col 10)
                 buy_sell = str(row.iloc[8]) if not pd.isna(row.iloc[8]) else None      # B/S
                 
+                # Extract broker price data (MS format)
+                broker_price = row.iloc[14] if not pd.isna(row.iloc[14]) else None  # Option Price (col 14)
+                price_currency = str(row.iloc[13]) if not pd.isna(row.iloc[13]) else None  # Position Currency (col 13)
+                
                 # Extract underlyer from description (simple regex-free approach)
                 underlyer = self._extract_underlyer_from_ms_description(description)
                 
@@ -82,7 +88,9 @@ class ExcelPositionParser:
                     expiry_date=expiry_date,
                     option_type="Call" if option_type == "C" else "Put" if option_type == "P" else option_type,
                     buy_sell="Buy" if buy_sell == "B" else "Sell" if buy_sell == "S" else buy_sell,
-                    underlyer=underlyer
+                    underlyer=underlyer,
+                    broker_price=float(broker_price) if broker_price else None,
+                    price_currency=price_currency
                 )
                 
                 positions.append(position)
@@ -126,6 +134,10 @@ class ExcelPositionParser:
                 buy_sell = str(row.iloc[3]) if not pd.isna(row.iloc[3]) else None     # Buy/Sell
                 underlyer = str(row.iloc[9]) if not pd.isna(row.iloc[9]) else None   # Underlyer Symbol
                 
+                # Extract broker price data (GS format)
+                broker_price = row.iloc[22] if not pd.isna(row.iloc[22]) else None  # Price1 (col 22)
+                price_currency = str(row.iloc[5]) if not pd.isna(row.iloc[5]) else None  # Ccy (col 5)
+                
                 position = OptionPosition(
                     broker="GS",
                     account=account,
@@ -135,7 +147,9 @@ class ExcelPositionParser:
                     expiry_date=expiry_date,
                     option_type=option_type,
                     buy_sell=buy_sell,
-                    underlyer=underlyer
+                    underlyer=underlyer,
+                    broker_price=float(broker_price) if broker_price else None,
+                    price_currency=price_currency
                 )
                 
                 positions.append(position)
@@ -196,12 +210,20 @@ class ExcelPositionParser:
                 # Use description as-is
                 stock_code = pos.description
             
-            # Convert quantity to holding
-            holding = str(abs(pos.quantity))  # Use absolute value
+            # Convert quantity to holding - preserve sign for sell positions  
+            if pos.buy_sell == "Sell":
+                # Option sell should be negative
+                holding = str(-pos.quantity) if pos.quantity > 0 else str(pos.quantity)
+            else:
+                # Option buy should be positive
+                holding = str(pos.quantity)
             
             standard_positions.append({
                 'StockCode': stock_code,
-                'Holding': holding
+                'Holding': holding,
+                'RawDescription': pos.description,  # Preserve original description for option processing
+                'BrokerPrice': pos.broker_price,    # Broker option price
+                'PriceCurrency': pos.price_currency # Price currency
             })
         
         return standard_positions

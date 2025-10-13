@@ -56,7 +56,7 @@ Examples:
     parser.add_argument(
         '--output',
         type=str,
-        default="./out/pictures",
+        default=None,
         help='Output folder for converted images (default: ./out/pictures)'
     )
     
@@ -69,7 +69,7 @@ Examples:
     parser.add_argument(
         '--max-workers',
         type=int,
-        default=3,
+        default=10,
         help='Maximum number of concurrent threads for broker processing (default: 3)'
     )
     
@@ -100,8 +100,11 @@ def main():
         force=args.force
     )
     
-    # Ensure output directories exist
-    ensure_output_directories()
+    # Setup configuration and ensure directories
+    from config import settings
+    if args.output is None:
+        args.output = settings.pictures_dir
+    settings.ensure_directories()
     
     # Process broker statements
     try:
@@ -119,9 +122,8 @@ def main():
         if processed_results and exchange_rates and date:
             logger.info("Saving processed data to persistent storage...")
             try:
-                # Ensure result output directory exists
-                result_output_dir = Path("./out/result")
-                result_output_dir.mkdir(parents=True, exist_ok=True)
+                # Use configured result directory
+                result_output_dir = Path(settings.result_dir)
                 
                 saved_files = save_processing_results(
                     results=processed_results, 
@@ -139,6 +141,11 @@ def main():
         logger.error(f"Error during processing: {e}")
         logger.error("Please check your configuration and try again.")
         sys.exit(1)
+    finally:
+        # Clean shutdown
+        logger.info("Shutting down gracefully...")
+        # Remove all loguru handlers to prevent hanging
+        logger.remove()
 
 
 if __name__ == "__main__":
