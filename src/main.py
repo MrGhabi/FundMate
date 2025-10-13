@@ -70,7 +70,7 @@ Examples:
         '--max-workers',
         type=int,
         default=10,
-        help='Maximum number of concurrent threads for broker processing (default: 3)'
+        help='Maximum number of concurrent threads for broker processing (default: 10)'
     )
     
     return parser
