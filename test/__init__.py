@@ -1,0 +1,4 @@
+"""
+FundMate test suite.
+"""
+

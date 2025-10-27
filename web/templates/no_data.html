@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}No Data - FundMate{% endblock %}
+
+{% block content %}
+<div class="empty-state-page">
+    <div class="empty-state-content">
+        <h2>No Portfolio Data Available</h2>
+        <p>It looks like you haven't processed any broker statements yet.</p>
+
+        <div class="help-section">
+            <h3>To get started:</h3>
+            <ol>
+                <li>Ensure <strong>Futu OpenD</strong> is running on port 11111</li>
+                <li>Place your broker statement files in the appropriate directory</li>
+                <li>Run the FundMate processor:
+                    <pre><code>python src/main.py ./data/statements --date YYYY-MM-DD</code></pre>
+                </li>
+                <li>Refresh this page to view your portfolio data</li>
+            </ol>
+        </div>
+
+        <div class="supported-brokers">
+            <h3>Supported Brokers:</h3>
+            <div class="broker-badges">
+                <span class="badge">IB (Interactive Brokers)</span>
+                <span class="badge">MOOMOO</span>
+                <span class="badge">FUTU</span>
+                <span class="badge">MS (Morgan Stanley)</span>
+                <span class="badge">GS (Goldman Sachs)</span>
+                <span class="badge">LB (Longbridge)</span>
+                <span class="badge">TIGER</span>
+                <span class="badge">WEBULL</span>
+                <span class="badge">SC (Standard Chartered)</span>
+                <span class="badge">HSBC</span>
+                <span class="badge">USMART</span>
+                <span class="badge">FIRST</span>
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button class="btn btn-primary" onclick="location.reload()">Refresh Page</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

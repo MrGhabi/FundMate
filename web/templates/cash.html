@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Cash Holdings - FundMate{% endblock %}
+
+{% block content %}
+<div class="cash-page">
+    <h2 class="page-title">Cash Holdings</h2>
+    <p class="date-display">Data as of: <strong>{{ date }}</strong></p>
+
+    <!-- Summary Cards -->
+    <div class="summary-cards">
+        {% for currency, total in cash_by_currency.items() %}
+        <div class="card">
+            <div class="card-header">Total {{ currency }}</div>
+            <div class="card-value">{{ total | format_currency(currency) }}</div>
+            <div class="card-subtext">
+                {% set count = cash_list | selectattr('currency', 'equalto', currency) | list | length %}
+                Across {{ count }} account(s)
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Exchange Rates Info -->
+    {% if metadata and metadata.exchange_rates %}
+    <div class="section info-box">
+        <h3 class="section-title">Exchange Rates (USD Base)</h3>
+        <div class="exchange-rates">
+            {% for currency, rate in metadata.exchange_rates.items() %}
+            <div class="rate-item">
+                <span class="currency">USD → {{ currency }}:</span>
+                <span class="rate">{{ rate | format_number }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Cash by Broker -->
+    <div class="section">
+        <h3 class="section-title">Cash Holdings by Broker</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Broker</th>
+                    <th>Account ID</th>
+                    <th class="text-right">CNY</th>
+                    <th class="text-right">HKD</th>
+                    <th class="text-right">USD</th>
+                    <th class="text-right">USD Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cash_item in cash_list %}
+                <tr>
+                    <td><span class="badge badge-{{ (cash_item.broker_name or cash_item.broker or 'default') | lower }}">{{ cash_item.broker_name or cash_item.broker }}</span></td>
+                    <td>{{ cash_item.account_id or 'N/A' }}</td>
+                    <td class="text-right">{{ cash_item.cny | format_currency('CNY') if cash_item.cny else '-' }}</td>
+                    <td class="text-right">{{ cash_item.hkd | format_currency('HKD') if cash_item.hkd else '-' }}</td>
+                    <td class="text-right">{{ cash_item.usd | format_currency('USD') if cash_item.usd else '-' }}</td>
+                    <td class="text-right"><strong>{{ cash_item.usd_total | format_currency('USD') if cash_item.usd_total else 'N/A' }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="total-row">
+                    <td colspan="5"><strong>Total (USD Equivalent)</strong></td>
+                    <td class="text-right">
+                        <strong>
+                        {{ cash_list | sum(attribute='usd_total') | format_currency('USD') if cash_list else '$0.00' }}
+                        </strong>
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <!-- Cash Distribution Chart -->
+    <div class="section">
+        <h3 class="section-title">Cash Distribution by Broker</h3>
+        <div class="chart-container">
+            {% for broker, total in cash_by_broker.items() %}
+            <div class="bar-chart-row">
+                <div class="bar-label">{{ broker }}</div>
+                <div class="bar-wrapper">
+                    {% set max_value = cash_by_broker.values() | max %}
+                    {% set percentage = (total / max_value * 100) %}
+                    <div class="bar" style="width: {{ percentage }}%">
+                        <span class="bar-value">{{ total | format_number }}</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="section actions">
+        <div class="button-group">
+            <button class="btn btn-secondary" onclick="window.print()">Print Report</button>
+            <a href="{{ url_for('index', date=date) }}" class="btn btn-primary">Back to Dashboard</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

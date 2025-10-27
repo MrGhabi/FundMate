@@ -1,0 +1,17 @@
+# FundMate Web Application Dependencies
+# Install with: pip install -r requirements-web.txt
+
+# Web Framework
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# Required for main FundMate functionality (if not already installed)
+pandas>=2.0.0
+pyarrow>=14.0.0
+python-dotenv>=1.0.0
+
+# Optional: Production WSGI server
+gunicorn==21.2.0
+
+# Optional: For development
+flask-cors==4.0.0

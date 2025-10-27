@@ -96,7 +96,7 @@ class LLMHandler:
     
     def _process_files(self, prompt: List[Dict[str, Any]], file_paths: List[str], file_type: str) -> Dict[str, Any]:
         """
-        Unified file processing method
+        Unified file processing method with retry on JSON parse errors
         
         Args:
             prompt: Prompt template
@@ -127,7 +127,7 @@ class LLMHandler:
                     "image_url": {"url": f"data:image/png;base64,{file_data}"}
                 })
         
-        # API call with retry logic
+        # API call with retry logic (includes JSON parsing retry)
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": user_content}],
@@ -136,6 +136,8 @@ class LLMHandler:
         }
         
         max_retries = 5
+        last_error = None
+        
         for attempt in range(max_retries):
             try:
                 response = requests.post(
@@ -148,38 +150,52 @@ class LLMHandler:
                     timeout=120
                 )
                 
-                if response.status_code == 200:
-                    break
-                else:
+                if response.status_code != 200:
                     if attempt < max_retries - 1:
                         logger.warning(f"API call failed (attempt {attempt + 1}/{max_retries}): {response.status_code} - {response.text}")
                         continue
                     else:
                         raise Exception(f"API call failed after {max_retries} attempts: {response.status_code} - {response.text}")
+                
+                # Try to parse JSON response
+                content = response.json()['choices'][0]['message']['content']
+                try:
+                    return self._parse_json_response(content)
+                except Exception as parse_error:
+                    # JSON parsing failed, retry if we have attempts left
+                    last_error = parse_error
+                    if attempt < max_retries - 1:
+                        logger.warning(f"JSON parse failed (attempt {attempt + 1}/{max_retries}): {str(parse_error)[:200]}")
+                        continue
+                    else:
+                        raise Exception(f"JSON parse failed after {max_retries} attempts: {parse_error}")
                         
             except Exception as e:
+                last_error = e
                 if attempt < max_retries - 1:
-                    logger.warning(f"API call exception (attempt {attempt + 1}/{max_retries}): {e}")
+                    logger.warning(f"Processing exception (attempt {attempt + 1}/{max_retries}): {str(e)[:200]}")
                     continue
                 else:
-                    raise Exception(f"API call failed after {max_retries} attempts: {e}")
+                    raise Exception(f"Processing failed after {max_retries} attempts: {e}")
         
-        # Parse response
-        content = response.json()['choices'][0]['message']['content']
-        return self._parse_json_response(content)
+        # Should not reach here, but in case
+        raise Exception(f"Processing failed after {max_retries} attempts: {last_error}")
     
     def _parse_json_response(self, content: str) -> Dict[str, Any]:
         """
         Parse JSON response, supports both pure JSON and Markdown format
+        Enhanced to handle incomplete JSON in markdown blocks
         """
-        # Try direct parsing
+        # Try direct parsing first
         try:
             return json.loads(content.strip())
         except json.JSONDecodeError:
             pass
         
-        # Try extracting from Markdown
+        # Try extracting from Markdown code blocks
         import re
+        
+        # Pattern 1: Standard markdown code block
         json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL)
         if json_match:
             try:
@@ -187,4 +203,14 @@ class LLMHandler:
             except json.JSONDecodeError:
                 pass
         
-        raise Exception(f"Cannot parse JSON response: {content[:200]}...")
+        # Pattern 2: Find JSON object (may not be in code block)
+        # Look for { ... } pattern
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
+        
+        # If all parsing attempts failed, raise with truncated content
+        raise Exception(f"Cannot parse JSON response: {content[:500]}...")

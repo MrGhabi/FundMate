@@ -1,0 +1,15 @@
+{
+  "_comment": "Expected totals from known good runs. Update manually when needed.",
+  "tolerance_percent": 5.0,
+  "0228": {
+    "total_cash": 12601423.22,
+    "total_positions": 64855665.97,
+    "grand_total": 77457089.19
+  },
+  "0630": {
+    "total_cash": 39882283.91,
+    "total_positions": 59362678.62,
+    "grand_total": 99244962.53
+  }
+}
+

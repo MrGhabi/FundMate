@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - FundMate{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <h2 class="page-title">Portfolio Dashboard</h2>
+    <p class="date-display">Data as of: <strong>{{ date }}</strong></p>
+
+    <!-- Summary Cards -->
+    <div class="summary-cards">
+        <div class="card">
+            <div class="card-header">Total Portfolio Value</div>
+            <div class="card-value">{{ summary.total_portfolio_value_usd | format_currency('USD') }}</div>
+            <div class="card-subtext">{{ summary.position_count }} positions across {{ summary.broker_count }} brokers</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Total Cash</div>
+            <div class="card-value">{{ summary.total_cash_usd | format_currency('USD') }}</div>
+            <div class="card-subtext">
+                {% for currency, amount in summary.cash_by_currency.items() %}
+                {{ amount | format_currency(currency) }}{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Positions Value</div>
+            <div class="card-value">{{ summary.total_positions_value_usd | format_currency('USD') }}</div>
+            <div class="card-subtext">
+                {{ (summary.total_positions_value_usd / summary.total_portfolio_value_usd * 100) | format_percent }} of portfolio
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Cash Allocation</div>
+            <div class="card-value">
+                {{ (summary.total_cash_usd / summary.total_portfolio_value_usd * 100) | format_percent }}
+            </div>
+            <div class="card-subtext">Uninvested capital</div>
+        </div>
+    </div>
+
+    <!-- Top Positions -->
+    {% if summary.top_positions %}
+    <div class="section">
+        <h3 class="section-title">Top 10 Positions</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Description</th>
+                    <th>Broker</th>
+                    <th class="text-right">Quantity</th>
+                    <th class="text-right">Market Value</th>
+                    <th class="text-right">% of Portfolio</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pos in summary.top_positions %}
+                <tr>
+                    <td><strong>{{ pos.symbol }}</strong></td>
+                    <td class="description">{{ pos.description }}</td>
+                    <td><span class="badge">{{ pos.broker }}</span></td>
+                    <td class="text-right">{{ pos.quantity | format_number }}</td>
+                    <td class="text-right">{{ pos.market_value | format_currency('USD') }}</td>
+                    <td class="text-right">
+                        {{ (pos.market_value / summary.total_portfolio_value_usd * 100) | format_percent }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Cash Breakdown by Currency -->
+    {% if summary.cash_by_currency %}
+    <div class="section">
+        <h3 class="section-title">Cash Holdings by Currency</h3>
+        <div class="chart-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Currency</th>
+                        <th class="text-right">Amount</th>
+                        <th class="text-right">% of Total Cash</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set total_cash = summary.cash_by_currency.values() | sum %}
+                    {% for currency, amount in summary.cash_by_currency.items() %}
+                    <tr>
+                        <td><strong>{{ currency }}</strong></td>
+                        <td class="text-right">{{ amount | format_currency(currency) }}</td>
+                        <td class="text-right">{{ (amount / total_cash * 100) | format_percent }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Quick Actions -->
+    <div class="section actions">
+        <h3 class="section-title">Quick Actions</h3>
+        <div class="button-group">
+            <a href="{{ url_for('positions', date=date) }}" class="btn btn-primary">View All Positions</a>
+            <a href="{{ url_for('cash', date=date) }}" class="btn btn-secondary">View Cash Details</a>
+            <a href="{{ url_for('compare') }}" class="btn btn-secondary">Compare Dates</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

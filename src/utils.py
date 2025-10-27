@@ -51,7 +51,10 @@ def _identify_hk_option(stock_code: str, raw_description: str = None) -> bool:
 def is_option_contract(stock_code: str, raw_description: str = None) -> bool:
     """
     Simple option detection - options have obvious names like "CALL", "PUT", "OPTION"
+    Also detects OCC format: SYMBOL YYMMDD C/P PRICE (e.g., SBET260116P25000)
     """
+    import re
+    
     # Check stock code for option keywords
     if stock_code and isinstance(stock_code, str):
         upper_code = stock_code.upper()
@@ -60,11 +63,18 @@ def is_option_contract(stock_code: str, raw_description: str = None) -> bool:
         # Also check for single-letter C/P at the end (common in option symbols)
         if upper_code.endswith(' C') or upper_code.endswith(' P'):
             return True
+        # Check for OCC format: SYMBOL(1-4 letters) YYMMDD(6 digits) C/P(1 letter) PRICE(digits)
+        # Example: SBET260116P25000
+        if re.match(r'^[A-Z]{1,4}\d{6}[CP]\d+$', upper_code):
+            return True
     
     # Check raw description for option keywords  
     if raw_description and isinstance(raw_description, str):
         upper_desc = raw_description.upper()
         if any(keyword in upper_desc for keyword in ['OPTION', 'CALL', 'PUT']):
+            return True
+        # Check for OCC format in description
+        if re.match(r'^[A-Z]{1,4}\d{6}[CP]\d+$', upper_desc):
             return True
     
     return False
