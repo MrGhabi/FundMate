@@ -29,14 +29,22 @@
             <div class="card-header">Positions Value</div>
             <div class="card-value">{{ summary.total_positions_value_usd | format_currency('USD') }}</div>
             <div class="card-subtext">
-                {{ (summary.total_positions_value_usd / summary.total_portfolio_value_usd * 100) | format_percent }} of portfolio
+                {% if summary.total_portfolio_value_usd > 0 %}
+                {{ summary.positions_allocation_pct | format_percent }} of portfolio
+                {% else %}
+                N/A
+                {% endif %}
             </div>
         </div>
 
         <div class="card">
             <div class="card-header">Cash Allocation</div>
             <div class="card-value">
-                {{ (summary.total_cash_usd / summary.total_portfolio_value_usd * 100) | format_percent }}
+                {% if summary.total_portfolio_value_usd > 0 %}
+                {{ summary.cash_allocation_pct | format_percent }}
+                {% else %}
+                N/A
+                {% endif %}
             </div>
             <div class="card-subtext">Uninvested capital</div>
         </div>
@@ -66,7 +74,7 @@
                     <td class="text-right">{{ pos.quantity | format_number }}</td>
                     <td class="text-right">{{ pos.market_value | format_currency('USD') }}</td>
                     <td class="text-right">
-                        {{ (pos.market_value / summary.total_portfolio_value_usd * 100) | format_percent }}
+                        {{ pos.portfolio_pct | format_percent }}
                     </td>
                 </tr>
                 {% endfor %}

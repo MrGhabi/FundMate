@@ -142,13 +142,13 @@
                     <tr>
                         <td><strong>Cash Allocation %</strong></td>
                         <td class="text-right">
-                            {{ (comparison.summary2.total_cash_usd / comparison.summary2.total_portfolio_value_usd * 100) | format_percent }}
+                            {{ comparison.summary2.cash_allocation_pct | format_percent }}
                         </td>
                         <td class="text-right">
-                            {{ (comparison.summary1.total_cash_usd / comparison.summary1.total_portfolio_value_usd * 100) | format_percent }}
+                            {{ comparison.summary1.cash_allocation_pct | format_percent }}
                         </td>
                         <td class="text-right">
-                            {% set cash_pct_change = (comparison.summary1.total_cash_usd / comparison.summary1.total_portfolio_value_usd * 100) - (comparison.summary2.total_cash_usd / comparison.summary2.total_portfolio_value_usd * 100) %}
+                            {% set cash_pct_change = comparison.summary1.cash_allocation_pct - comparison.summary2.cash_allocation_pct %}
                             {% if cash_pct_change >= 0 %}+{% endif %}{{ cash_pct_change | format_percent }}
                         </td>
                     </tr>

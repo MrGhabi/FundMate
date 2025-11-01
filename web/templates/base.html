@@ -19,6 +19,7 @@
                 <li><a href="{{ url_for('positions') }}" class="{% if request.endpoint == 'positions' %}active{% endif %}">Positions</a></li>
                 <li><a href="{{ url_for('cash') }}" class="{% if request.endpoint == 'cash' %}active{% endif %}">Cash</a></li>
                 <li><a href="{{ url_for('compare') }}" class="{% if request.endpoint == 'compare' %}active{% endif %}">Compare</a></li>
+                <li><a href="{{ url_for('upload_page') }}" class="{% if request.endpoint == 'upload_page' %}active{% endif %}">Upload</a></li>
                 <li><a href="{{ url_for('about') }}" class="{% if request.endpoint == 'about' %}active{% endif %}">About</a></li>
             </ul>
         </div>

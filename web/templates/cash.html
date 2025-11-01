@@ -14,8 +14,7 @@
             <div class="card-header">Total {{ currency }}</div>
             <div class="card-value">{{ total | format_currency(currency) }}</div>
             <div class="card-subtext">
-                {% set count = cash_list | selectattr('currency', 'equalto', currency) | list | length %}
-                Across {{ count }} account(s)
+                Across {{ accounts_by_currency.get(currency, 0) }} account(s)
             </div>
         </div>
         {% endfor %}
