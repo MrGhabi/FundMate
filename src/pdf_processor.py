@@ -18,6 +18,11 @@ except ImportError:
     logger.error("Install pypdf: pip install pypdf")
     raise
 
+try:
+    from .prompt_templates import PROMPT_TEMPLATES
+except (ImportError, ValueError):
+    from prompt_templates import PROMPT_TEMPLATES
+
 
 # Broker-specific configurations
 BROKER_CONFIG = {
@@ -125,7 +130,6 @@ class PDFProcessor:
             processed_path = self._process_pdf_file(pdf_path, broker_name, account_id, force)
             
             # Get prompt template
-            from prompt_templates import PROMPT_TEMPLATES
             prompt = PROMPT_TEMPLATES.get(broker_name.upper(), PROMPT_TEMPLATES.get('DEFAULT', []))
             
             # Send to LLM

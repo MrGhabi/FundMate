@@ -10,8 +10,16 @@ from datetime import datetime
 from typing import List, Dict, Any, Union, TYPE_CHECKING
 from loguru import logger
 
+try:
+    from .exchange_rate_handler import exchange_handler
+except (ImportError, ValueError):
+    from exchange_rate_handler import exchange_handler
+
 if TYPE_CHECKING:
-    from broker_processor import ProcessedResult
+    try:
+        from .broker_processor import ProcessedResult
+    except (ImportError, ValueError):
+        from broker_processor import ProcessedResult
 
 
 def _identify_hk_option(stock_code: str, raw_description: str = None) -> bool:
@@ -302,7 +310,10 @@ def ensure_output_directories() -> None:
     Ensure all required output directories exist.
     Now uses centralized configuration.
     """
-    from config import settings
+    try:
+        from .config import settings
+    except (ImportError, ValueError):
+        from config import settings
     settings.ensure_directories()
 
 
@@ -439,7 +450,6 @@ def print_asset_summary(results: List["ProcessedResult"], date: str = None) -> N
                 # Convert to USD if needed
                 if price_currency != 'USD':
                     try:
-                        from exchange_rate_handler import exchange_handler
                         usd_rate = exchange_handler.get_rate_lazy(price_currency, 'USD', date)
                         position_value_usd = position_value_original * usd_rate
                     except Exception as e:
@@ -466,7 +476,6 @@ def print_asset_summary(results: List["ProcessedResult"], date: str = None) -> N
             if agg['final_price'] is not None:
                 if agg['price_currency'] != 'USD' and not agg['price_currency'].endswith('_UNCONVERTED'):
                     try:
-                        from exchange_rate_handler import exchange_handler
                         usd_rate = exchange_handler.get_rate_lazy(agg['price_currency'], 'USD', date)
                         usd_price = agg['final_price'] * usd_rate
                         price_display = f"{agg['final_price']:.2f} {agg['price_currency']} (${usd_price:.2f} USD, {agg['price_source']})"

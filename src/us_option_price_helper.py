@@ -6,6 +6,11 @@ Provides price and multiplier data for US options using Futu API
 
 from typing import Optional, Tuple
 from loguru import logger
+
+try:
+    from .config import settings
+except (ImportError, ValueError):
+    from config import settings
 import re
 from datetime import datetime
 
@@ -108,7 +113,6 @@ def get_us_option_price_from_futu(stock_code: str, raw_description: str, date: s
     """
     try:
         import futu as ft
-        from config import settings
         
         # Parse option details
         option_info = parse_us_option_description(raw_description)

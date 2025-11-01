@@ -263,10 +263,11 @@ class ExcelPositionParser:
             logger.warning(f"Failed to format option symbol: {e}")
             return f"{underlyer} OPTION"
     
-    def parse_directory(self, directory_path: str) -> Dict[str, List[Dict[str, str]]]:
+    def parse_directory(self, directory_path: str, target_date: Optional[str] = None) -> Dict[str, List[Dict[str, str]]]:
         """
         Parse all Excel files in directory structure.
-        Expected structure: directory/BROKER/files.xls
+        Expected structure: directory/BROKER/[DATE/]<files>.xls
+        If target_date is provided (YYYY-MM-DD), only scan that subdirectory when available.
         
         Returns:
             Dict: {broker_name: [{'StockCode': str, 'Holding': str}, ...]}
@@ -280,25 +281,43 @@ class ExcelPositionParser:
         
         logger.info(f"Scanning Excel directory: {directory_path}")
         
-        # Look for MS and GS subdirectories
+        # Look for broker subdirectories (support nested date folders)
         for broker_dir in directory.iterdir():
             if not broker_dir.is_dir():
                 continue
             
             broker_name = broker_dir.name.upper()
+
+            if broker_name.lower() == 'temp':
+                logger.debug("Skipping temporary upload directory")
+                continue
             logger.info(f"Found Excel broker directory: {broker_name}")
             
             broker_positions = []
             
-            # Process Excel files in broker directory
-            for file_path in broker_dir.iterdir():
-                if not file_path.is_file():
-                    continue
-                
-                # Check if it's an Excel file (case insensitive)
-                if file_path.suffix.lower() not in ['.xls', '.xlsx']:
-                    continue
-                
+            # Determine search paths (prefer date-specific folder if provided)
+            search_paths = []
+            if target_date:
+                date_dir = broker_dir / target_date
+                if date_dir.exists():
+                    search_paths.append(date_dir)
+
+            if not search_paths:
+                search_paths.append(broker_dir)
+
+            # Process Excel files in broker directory (including nested folders)
+            excel_files = [
+                file_path
+                for path in search_paths
+                for file_path in path.rglob("*")
+                if file_path.is_file() and file_path.suffix.lower() in ['.xls', '.xlsx']
+            ]
+
+            if not excel_files:
+                logger.info(f"No Excel files found for {broker_name}")
+                continue
+
+            for file_path in excel_files:
                 logger.info(f"Processing Excel file: {file_path}")
                 
                 if broker_name == "MS":
