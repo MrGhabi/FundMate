@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}FundMate{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="navbar-brand">
+                <h1>FundMate</h1>
+                <p class="tagline">Portfolio Management System</p>
+            </div>
+            <ul class="navbar-menu">
+                <li><a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}">Dashboard</a></li>
+                <li><a href="{{ url_for('positions') }}" class="{% if request.endpoint == 'positions' %}active{% endif %}">Positions</a></li>
+                <li><a href="{{ url_for('cash') }}" class="{% if request.endpoint == 'cash' %}active{% endif %}">Cash</a></li>
+                <li><a href="{{ url_for('compare') }}" class="{% if request.endpoint == 'compare' %}active{% endif %}">Compare</a></li>
+                <li><a href="{{ url_for('upload_page') }}" class="{% if request.endpoint == 'upload_page' %}active{% endif %}">Upload</a></li>
+                <li><a href="{{ url_for('about') }}" class="{% if request.endpoint == 'about' %}active{% endif %}">About</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% if available_dates %}
+        <div class="date-selector">
+            <label for="date-select">Select Date:</label>
+            <select id="date-select" onchange="changeDateFilter(this.value)">
+                {% for d in available_dates %}
+                <option value="{{ d }}" {% if d == date %}selected{% endif %}>{{ d }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 FundMate - Financial Portfolio Processor</p>
+            <p class="footer-note">Powered by Google Gemini AI & Futu OpenD</p>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

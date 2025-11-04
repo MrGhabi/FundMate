@@ -11,6 +11,19 @@ import re
 from typing import Optional
 from loguru import logger
 
+try:
+    from .config import settings
+    from .exchange_rate_handler import exchange_handler
+    from .utils import get_option_multiplier
+    from .us_option_price_helper import get_us_option_price_from_futu
+    from .hk_option_price_helper import get_hk_option_price_from_futu
+except (ImportError, ValueError):
+    from config import settings
+    from exchange_rate_handler import exchange_handler
+    from utils import get_option_multiplier
+    from us_option_price_helper import get_us_option_price_from_futu
+    from hk_option_price_helper import get_hk_option_price_from_futu
+
 
 def normalize_symbol(raw_symbol: str) -> Optional[str]:
     """Clean broker symbol to tradeable format"""
@@ -49,8 +62,6 @@ def get_price_akshare(symbol: str, date: str) -> Optional[float]:
 
 def get_price_futu(symbol: str, date: str) -> Optional[float]:
     """Get price via futu API"""
-    from config import settings
-    
     quote_ctx = None
     try:
         import futu as ft
@@ -136,7 +147,6 @@ def get_stock_price(symbol: str, date: str, source: str = None, raw_description:
         )
         
         if is_us_option:
-            from us_option_price_helper import get_us_option_price_from_futu
             price, _ = get_us_option_price_from_futu(symbol, description, date)
             if price:
                 return price
@@ -144,7 +154,6 @@ def get_stock_price(symbol: str, date: str, source: str = None, raw_description:
         # Try HK option format (e.g., "CLI 250929 19.00 CALL")
         # Check for HKATS code pattern: 3 letters + 6 digits
         if re.search(r'[A-Z]{3}\s+\d{6}', description):
-            from hk_option_price_helper import get_hk_option_price_from_futu
             price = get_hk_option_price_from_futu(symbol, description, date)
             if price:
                 return price
@@ -167,8 +176,6 @@ def get_stock_price(symbol: str, date: str, source: str = None, raw_description:
             option_code = find_closest_futu_option(option_info['underlying'], option_info['strike'], expiry_date)
             if option_code:
                 return get_option_price_futu(option_code, date)
-    
-    from config import settings
     
     clean_symbol = normalize_symbol(symbol)
     if not clean_symbol:
@@ -238,7 +245,6 @@ def calculate_portfolio_value(holdings, date: str, source: str = None, exchange_
         # Calculate position value (preserve sign for short/long positions)
         # Apply correct multiplier based on instrument type
         if price:
-            from utils import get_option_multiplier
             broker_multiplier = holding.get('Multiplier')
             multiplier = get_option_multiplier(symbol, raw_description, broker_multiplier)
             value = price * shares * multiplier
@@ -260,7 +266,6 @@ def calculate_portfolio_value(holdings, date: str, source: str = None, exchange_
         if price_currency != 'USD' and value > 0:
             if image_processor:
                 # Lazy loading: fetch rate only when needed
-                from exchange_rate_handler import exchange_handler
                 rate = exchange_handler.get_rate_lazy(price_currency, 'USD', date)
                 usd_value = value * rate  # Direct multiplication since rate is from_currency→USD
             elif exchange_rates:
@@ -406,8 +411,6 @@ def find_closest_futu_option(underlying: str, target_strike: float, expiry_date:
     Returns:
         Futu option code like 'HK.MIU250929C28000' or None
     """
-    from config import settings
-    
     quote_ctx = None
     try:
         import futu as ft
@@ -472,8 +475,6 @@ def get_option_price_futu(option_code: str, date: str) -> Optional[float]:
     Returns:
         Option price or None
     """
-    from config import settings
-    
     quote_ctx = None
     try:
         import futu as ft

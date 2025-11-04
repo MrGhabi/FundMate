@@ -1,0 +1,584 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Statements - FundMate{% endblock %}
+
+{% block extra_css %}
+<style>
+    .upload-container {
+        max-width: 800px;
+        margin: 2rem auto;
+        padding: 2rem;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .upload-zone {
+        border: 2px dashed #ccc;
+        border-radius: 8px;
+        padding: 3rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        background: #f9f9f9;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+        border-color: #4CAF50;
+        background: #f0f8f0;
+    }
+
+    .upload-zone.disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .upload-icon {
+        font-size: 3rem;
+        color: #999;
+        margin-bottom: 1rem;
+    }
+
+    .file-list {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: #f5f5f5;
+        border-radius: 4px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    .file-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem;
+        margin: 0.25rem 0;
+        background: white;
+        border-radius: 4px;
+    }
+
+    .file-item button {
+        background: #f44336;
+        color: white;
+        border: none;
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .form-group {
+        margin: 1.5rem 0;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+    }
+
+    .form-group input,
+    .form-group select {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 1rem;
+    }
+
+    .btn-submit {
+        background: #4CAF50;
+        color: white;
+        padding: 1rem 2rem;
+        border: none;
+        border-radius: 4px;
+        font-size: 1rem;
+        cursor: pointer;
+        width: 100%;
+        margin-top: 1rem;
+    }
+
+    .btn-submit:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+
+    .progress-container {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: #f5f5f5;
+        border-radius: 4px;
+        display: none;
+    }
+
+    .progress-bar {
+        height: 30px;
+        background: #e0e0e0;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 0.5rem;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: #4CAF50;
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+    }
+
+    .job-status {
+        padding: 1rem;
+        margin-top: 1rem;
+        border-radius: 4px;
+    }
+
+    .job-status.success {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .job-status.error {
+        background: #f8d7da;
+        color: #721c24;
+    }
+
+    .job-status.processing {
+        background: #d1ecf1;
+        color: #0c5460;
+    }
+
+    .job-history {
+        margin-top: 2rem;
+        padding-top: 2rem;
+        border-top: 2px solid #eee;
+    }
+
+    .job-card {
+        padding: 1rem;
+        margin: 0.5rem 0;
+        background: #f9f9f9;
+        border-radius: 4px;
+        border-left: 4px solid #ccc;
+    }
+
+    .job-card.completed {
+        border-left-color: #4CAF50;
+    }
+
+    .job-card.failed {
+        border-left-color: #f44336;
+    }
+
+    .job-card.processing {
+        border-left-color: #2196F3;
+    }
+
+    .helper-text {
+        font-size: 0.875rem;
+        color: #666;
+        margin-top: 0.25rem;
+    }
+
+    .broker-list {
+        font-size: 0.875rem;
+        color: #666;
+        margin-top: 0.5rem;
+    }
+
+    .detected-brokers {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: #e8f5e9;
+        border-radius: 4px;
+        border-left: 4px solid #4CAF50;
+    }
+
+    .detected-brokers h4 {
+        margin: 0 0 0.5rem 0;
+        color: #2e7d32;
+    }
+
+    .broker-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        margin: 0.25rem;
+        background: #4CAF50;
+        color: white;
+        border-radius: 12px;
+        font-size: 0.875rem;
+    }
+
+    label input[type="checkbox"] {
+        margin-right: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="upload-container">
+    <h2>Upload Broker Statements</h2>
+    <p>Batch upload: Drop ZIP files or multiple broker statements - broker names will be detected automatically!</p>
+
+    <form id="uploadForm" enctype="multipart/form-data">
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="autoDetect" name="auto_detect" checked>
+                Auto-detect brokers from filenames (recommended)
+            </label>
+            <p class="helper-text">
+                Files will be automatically organized by broker. Ensure filenames contain broker name (e.g., "IB_Statement.pdf", "FUTU_Feb.xlsx")
+            </p>
+        </div>
+
+        <div class="form-group" id="manualBrokerGroup" style="display: none;">
+            <label for="broker">Broker Name (Manual Mode) *</label>
+            <input type="text" id="broker" name="broker" placeholder="e.g., IB, MOOMOO, FUTU">
+            <p class="helper-text">Required only when auto-detect is disabled. All files will be processed for this broker.</p>
+        </div>
+
+        <div class="form-group">
+            <label for="date">Statement Date *</label>
+            <input type="date" id="date" name="date" required>
+            <p class="helper-text">Select the date for which the statements apply</p>
+        </div>
+
+        <div class="form-group">
+            <label>Files *</label>
+            <div id="dropZone" class="upload-zone">
+                <div class="upload-icon">📦</div>
+                <p><strong>Drag and drop files or ZIP archives here</strong></p>
+                <p>or click to browse</p>
+                <p class="helper-text">Accepted: PDF, XLSX, XLS, ZIP (Max 200MB)</p>
+                <p class="helper-text" style="margin-top: 0.5rem;">💡 <strong>Tip:</strong> Upload a ZIP containing all broker statements for batch processing!</p>
+            </div>
+            <input type="file" id="fileInput" name="files" multiple accept=".pdf,.xlsx,.xls,.zip" style="display: none;">
+
+            <div id="fileList" class="file-list" style="display: none;">
+                <!-- Files will be listed here -->
+            </div>
+
+            <div id="detectedBrokers" class="detected-brokers" style="display: none;">
+                <h4>Detected Brokers:</h4>
+                <div id="brokerList"></div>
+            </div>
+        </div>
+
+        <button type="submit" id="submitBtn" class="btn-submit">Process Statements</button>
+    </form>
+
+    <div id="progressContainer" class="progress-container">
+        <div class="progress-bar">
+            <div id="progressFill" class="progress-fill" style="width: 0%">0%</div>
+        </div>
+        <p id="progressMessage">Starting...</p>
+    </div>
+
+    <div id="jobStatus" class="job-status" style="display: none;">
+        <!-- Status message will appear here -->
+    </div>
+
+    <div class="job-history">
+        <h3>Recent Jobs</h3>
+        <div id="jobHistory">
+            <p>Loading job history...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const uploadForm = document.getElementById('uploadForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressFill = document.getElementById('progressFill');
+    const progressMessage = document.getElementById('progressMessage');
+    const jobStatus = document.getElementById('jobStatus');
+    const autoDetect = document.getElementById('autoDetect');
+    const manualBrokerGroup = document.getElementById('manualBrokerGroup');
+    const brokerInput = document.getElementById('broker');
+    const detectedBrokersDiv = document.getElementById('detectedBrokers');
+    const brokerListDiv = document.getElementById('brokerList');
+
+    let selectedFiles = [];
+    let currentJobId = null;
+    let pollInterval = null;
+    let detectedBrokers = new Set();
+
+    // Broker detection patterns (must match server-side)
+    const brokerPatterns = {
+        'IB': ['ib_', 'ib-', 'ib ', 'interactive', 'ibkr'],
+        'FUTU': ['futu', '富途'],
+        'MOOMOO': ['moomoo', 'moo_', 'moo-', 'moo ', '富牛'],
+        'MS': ['morgan_stanley', 'morgan-stanley', 'ms_', 'ms-', '摩根士丹利'],
+        'GS': ['goldman_sachs', 'goldman-sachs', 'gs_', 'gs-', '高盛'],
+        'SC': ['standard_chartered', 'standard-chartered', 'sc_', 'sc-', '渣打'],
+        'HSBC': ['hsbc', '汇丰'],
+        'CS': ['credit_suisse', 'credit-suisse', 'cs_', 'cs-', '瑞信'],
+        'LB': ['longbridge', 'lb_', 'lb-', '长桥'],
+        'SOFI': ['sofi'],
+        'UBS': ['ubs', '瑞银'],
+        'WB': ['webull', 'wb_', 'wb-', '微牛']
+    };
+
+    // Set default date to today
+    document.getElementById('date').valueAsDate = new Date();
+
+    // Toggle broker input based on auto-detect checkbox
+    autoDetect.addEventListener('change', function() {
+        if (this.checked) {
+            manualBrokerGroup.style.display = 'none';
+            brokerInput.removeAttribute('required');
+        } else {
+            manualBrokerGroup.style.display = 'block';
+            brokerInput.setAttribute('required', 'required');
+        }
+        updateDetectedBrokers();
+    });
+
+    // Drag and drop handlers
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        handleFiles(e.dataTransfer.files);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        handleFiles(e.target.files);
+    });
+
+    function detectBrokerFromFilename(filename) {
+        const lowerName = filename.toLowerCase();
+        for (const [broker, patterns] of Object.entries(brokerPatterns)) {
+            for (const pattern of patterns) {
+                if (lowerName.includes(pattern)) {
+                    return broker;
+                }
+            }
+        }
+        return null;
+    }
+
+    function handleFiles(files) {
+        selectedFiles = Array.from(files);
+        updateDetectedBrokers();
+        displayFileList();
+    }
+
+    function updateDetectedBrokers() {
+        detectedBrokers.clear();
+
+        if (autoDetect.checked) {
+            for (const file of selectedFiles) {
+                // Skip ZIP files for detection display
+                if (!file.name.toLowerCase().endsWith('.zip')) {
+                    const broker = detectBrokerFromFilename(file.name);
+                    if (broker) {
+                        detectedBrokers.add(broker);
+                    }
+                }
+            }
+
+            if (detectedBrokers.size > 0) {
+                detectedBrokersDiv.style.display = 'block';
+                brokerListDiv.innerHTML = Array.from(detectedBrokers)
+                    .map(broker => `<span class="broker-badge">${broker}</span>`)
+                    .join('');
+            } else if (selectedFiles.length > 0 && !selectedFiles.some(f => f.name.toLowerCase().endsWith('.zip'))) {
+                detectedBrokersDiv.style.display = 'block';
+                brokerListDiv.innerHTML = '<span style="color: #f44336;">⚠️ No brokers detected. Please rename files to include broker names.</span>';
+            } else {
+                detectedBrokersDiv.style.display = 'none';
+            }
+        } else {
+            detectedBrokersDiv.style.display = 'none';
+        }
+    }
+
+    function displayFileList() {
+        if (selectedFiles.length === 0) {
+            fileList.style.display = 'none';
+            return;
+        }
+
+        fileList.style.display = 'block';
+        fileList.innerHTML = selectedFiles.map((file, index) => {
+            const broker = detectBrokerFromFilename(file.name);
+            const brokerTag = broker ? `<span class="broker-badge" style="font-size: 0.75rem; margin-left: 0.5rem;">${broker}</span>` : '';
+            const isZip = file.name.toLowerCase().endsWith('.zip');
+            const zipTag = isZip ? '<span style="color: #2196F3; margin-left: 0.5rem;">📦 ZIP</span>' : '';
+
+            return `
+                <div class="file-item">
+                    <span>${file.name} (${formatFileSize(file.size)})${brokerTag}${zipTag}</span>
+                    <button type="button" onclick="removeFile(${index})">Remove</button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function removeFile(index) {
+        selectedFiles.splice(index, 1);
+        updateDetectedBrokers();
+        displayFileList();
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    uploadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        if (selectedFiles.length === 0) {
+            alert('Please select at least one file');
+            return;
+        }
+
+        const formData = new FormData();
+        selectedFiles.forEach(file => formData.append('files', file));
+        formData.append('auto_detect', autoDetect.checked ? 'true' : 'false');
+
+        if (!autoDetect.checked) {
+            const broker = document.getElementById('broker').value.toUpperCase();
+            if (!broker) {
+                alert('Please enter a broker name');
+                return;
+            }
+            formData.append('broker', broker);
+        }
+
+        formData.append('date', document.getElementById('date').value);
+
+        // Disable form
+        submitBtn.disabled = true;
+        dropZone.classList.add('disabled');
+        progressContainer.style.display = 'block';
+        jobStatus.style.display = 'none';
+
+        try {
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                currentJobId = data.job_id;
+                updateProgress(0, data.message);
+                startPolling();
+            } else {
+                showStatus('error', data.error || 'Upload failed');
+                resetForm();
+            }
+        } catch (error) {
+            showStatus('error', 'Network error: ' + error.message);
+            resetForm();
+        }
+    });
+
+    function startPolling() {
+        if (pollInterval) clearInterval(pollInterval);
+
+        pollInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/api/jobs/${currentJobId}`);
+                const job = await response.json();
+
+                updateProgress(job.progress, job.message);
+
+                if (job.status === 'completed') {
+                    clearInterval(pollInterval);
+                    showStatus('success', `✓ ${job.message}\n\nView results in the Dashboard`);
+                    resetForm();
+                    loadJobHistory();
+
+                    // Redirect to dashboard after 3 seconds
+                    setTimeout(() => {
+                        window.location.href = '/?date=' + job.date;
+                    }, 3000);
+                } else if (job.status === 'failed') {
+                    clearInterval(pollInterval);
+                    showStatus('error', `✗ ${job.message}\n\nError: ${job.error || 'Unknown error'}`);
+                    resetForm();
+                    loadJobHistory();
+                }
+            } catch (error) {
+                console.error('Polling error:', error);
+            }
+        }, 2000);
+    }
+
+    function updateProgress(percent, message) {
+        progressFill.style.width = percent + '%';
+        progressFill.textContent = percent + '%';
+        progressMessage.textContent = message;
+    }
+
+    function showStatus(type, message) {
+        jobStatus.style.display = 'block';
+        jobStatus.className = 'job-status ' + type;
+        jobStatus.textContent = message;
+    }
+
+    function resetForm() {
+        submitBtn.disabled = false;
+        dropZone.classList.remove('disabled');
+        selectedFiles = [];
+        fileInput.value = '';
+        displayFileList();
+    }
+
+    async function loadJobHistory() {
+        try {
+            const response = await fetch('/api/jobs');
+            const jobs = await response.json();
+
+            const historyDiv = document.getElementById('jobHistory');
+
+            if (jobs.length === 0) {
+                historyDiv.innerHTML = '<p>No jobs yet</p>';
+                return;
+            }
+
+            historyDiv.innerHTML = jobs.slice(0, 10).map(job => {
+                const brokerDisplay = job.brokers ? job.brokers.join(', ') : (job.broker || 'Unknown');
+                return `
+                    <div class="job-card ${job.status}">
+                        <strong>${brokerDisplay}</strong> - ${job.date}
+                        <br>
+                        <small>Status: ${job.status} | ${new Date(job.created_at).toLocaleString()}</small>
+                    </div>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('Failed to load job history:', error);
+        }
+    }
+
+    // Load job history on page load
+    loadJobHistory();
+</script>
+{% endblock %}

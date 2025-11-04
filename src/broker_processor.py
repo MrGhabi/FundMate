@@ -9,10 +9,20 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from loguru import logger
 import re
-from pdf_processor import PDFProcessor
-from excel_parser import ExcelPositionParser
-from price_fetcher import PriceFetcher
-from utils import setup_logging, validate_date_format, print_asset_summary
+try:
+    from .pdf_processor import PDFProcessor
+    from .excel_parser import ExcelPositionParser
+    from .price_fetcher import PriceFetcher, get_stock_price
+    from .utils import setup_logging, validate_date_format, print_asset_summary, get_option_multiplier
+    from .config import settings
+    from .exchange_rate_handler import exchange_handler
+except (ImportError, ValueError):
+    from pdf_processor import PDFProcessor
+    from excel_parser import ExcelPositionParser
+    from price_fetcher import PriceFetcher, get_stock_price
+    from utils import setup_logging, validate_date_format, print_asset_summary, get_option_multiplier
+    from config import settings
+    from exchange_rate_handler import exchange_handler
 
 
 @dataclass
@@ -42,7 +52,10 @@ class BrokerStatementProcessor:
     
     def __init__(self):
         """Initialize the processor with PDF, LLM, price fetcher and excel processor instances."""
-        from llm_handler import LLMHandler
+        try:
+            from .llm_handler import LLMHandler
+        except (ImportError, ValueError):
+            from llm_handler import LLMHandler
         self.llm_handler = LLMHandler()
         self.pdf_processor = PDFProcessor(self.llm_handler)
         self.excel_parser = ExcelPositionParser()
@@ -78,7 +91,6 @@ class BrokerStatementProcessor:
             return None, None, None
         
         # Step 2: Setup logging
-        from config import settings
         setup_logging(settings.LOG_DIR, date)
         
         # Step 3: Log processing start
@@ -98,7 +110,6 @@ class BrokerStatementProcessor:
         # Step 7: Get exchange rates
         logger.info("Fetching exchange rate data...")
         try:
-            from exchange_rate_handler import exchange_handler
             exchange_rates = exchange_handler.get_rates_legacy(date)
             logger.success(f"Exchange rates retrieved: CNY={exchange_rates['CNY']}, HKD={exchange_rates['HKD']}")
         except Exception as e:
@@ -147,7 +158,7 @@ class BrokerStatementProcessor:
         """
         try:
             # Parse Excel data using ExcelPositionParser
-            excel_data = self.excel_parser.parse_directory(broker_folder)
+            excel_data = self.excel_parser.parse_directory(broker_folder, target_date=date)
             
             if not excel_data:
                 logger.info("No Excel data found in broker folder")
@@ -242,9 +253,6 @@ class BrokerStatementProcessor:
         # Step 2: Batch query prices for all unique symbols
         optimized_prices = {}  # symbol -> {'price': float, 'source': str, 'currency': str}
         
-        from price_fetcher import get_stock_price
-        from config import settings
-        
         for symbol in unique_symbols.keys():
             try:
                 logger.debug(f"Querying price for {symbol}...")
@@ -319,7 +327,6 @@ class BrokerStatementProcessor:
                 
                 if final_price is not None:
                     # Apply correct multiplier based on instrument type
-                    from utils import get_option_multiplier
                     stock_code = position['StockCode']
                     raw_description = position.get('RawDescription')
                     broker_multiplier = position.get('Multiplier')
@@ -382,13 +389,34 @@ class BrokerStatementProcessor:
                 continue
             
             broker_name = broker_dir.name
+
+            # Skip temporary upload directories
+            if broker_name.lower() == 'temp':
+                logger.debug("Skipping temporary upload directory")
+                continue
             
             # Apply broker filter
             if broker_filter and broker_name.upper() != broker_filter.upper():
                 continue
             
-            # Find PDF files
-            pdf_files = list(broker_dir.glob("*.pdf"))
+            # Determine search paths (prefer date-specific folder if available)
+            search_paths = []
+            if date:
+                date_dir = broker_dir / date
+                if date_dir.exists():
+                    search_paths.append(date_dir)
+            
+            if not search_paths:
+                search_paths.append(broker_dir)
+
+            # Find PDF files (support nested date folders)
+            pdf_files = []
+            for path in search_paths:
+                pdf_files.extend(
+                    p for p in path.rglob("*.pdf")
+                    if p.is_file() and "__MACOSX" not in p.parts
+                )
+
             if not pdf_files:
                 logger.info(f"No PDF files found for {broker_name}")
                 continue

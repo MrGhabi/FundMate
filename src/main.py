@@ -8,9 +8,16 @@ import argparse
 from pathlib import Path
 from loguru import logger
 
-from broker_processor import BrokerStatementProcessor
-from data_persistence import save_processing_results
-from utils import validate_broker_folder, print_processing_info, ensure_output_directories
+try:
+    from .broker_processor import BrokerStatementProcessor
+    from .data_persistence import save_processing_results
+    from .utils import validate_broker_folder, print_processing_info, ensure_output_directories
+    from .config import settings
+except (ImportError, ValueError):
+    from broker_processor import BrokerStatementProcessor
+    from data_persistence import save_processing_results
+    from utils import validate_broker_folder, print_processing_info, ensure_output_directories
+    from config import settings
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -101,7 +108,6 @@ def main():
     )
     
     # Setup configuration and ensure directories
-    from config import settings
     if args.output is None:
         args.output = settings.pictures_dir
     settings.ensure_directories()

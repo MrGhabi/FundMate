@@ -12,6 +12,11 @@ from datetime import datetime
 from loguru import logger
 import requests
 
+try:
+    from .config import settings
+except (ImportError, ValueError):
+    from config import settings
+
 
 class ExchangeRateHandler:
     """
@@ -39,11 +44,6 @@ class ExchangeRateHandler:
             return rate
         
         # Not in cache, fetch from API
-        try:
-            from config import settings
-        except ImportError as e:
-            raise ImportError(f"Cannot import config module for exchange rate API: {e}. Check your config.py file.")
-        
         try:
             # Rate limiting to prevent 429 errors
             time.sleep(0.6)  # Slightly longer delay to be safe

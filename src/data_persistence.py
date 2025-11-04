@@ -9,7 +9,18 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import json
 from loguru import logger
-from broker_processor import ProcessedResult
+
+try:
+    from .broker_processor import ProcessedResult
+    from .config import settings
+except (ImportError, ValueError):
+    from broker_processor import ProcessedResult
+    from config import settings
+
+try:
+    from .utils import is_money_market_fund, calculate_position_value
+except (ImportError, ValueError):
+    from utils import is_money_market_fund, calculate_position_value
 
 
 class DataPersistence:
@@ -19,7 +30,6 @@ class DataPersistence:
     """
     
     def __init__(self, base_output_dir: str = None):
-        from config import settings
         if base_output_dir is None:
             base_output_dir = settings.result_dir
         """
@@ -80,8 +90,6 @@ class DataPersistence:
         for result in results:
             # ========== MMF Reclassification ==========
             # Detect and move Money Market Funds from positions to cash
-            from utils import is_money_market_fund
-            
             real_positions = []
             mmf_cash_adjustments = {}
             
@@ -179,7 +187,6 @@ class DataPersistence:
                 position_value_usd = None
                 if position.get('FinalPrice'):
                     try:
-                        from utils import calculate_position_value
                         position_value, _ = calculate_position_value(
                             price=position['FinalPrice'],
                             holding=holding_value,
@@ -445,7 +452,6 @@ def save_processing_results(results: List[ProcessedResult], date: str,
     Returns:
         Dict[str, str]: Dictionary with file paths of saved data
     """
-    from config import settings
     if output_dir is None:
         output_dir = settings.result_dir
     persistence = DataPersistence(output_dir)

@@ -6,6 +6,11 @@ Provides price data for HK options using Futu API
 
 from typing import Optional, Tuple
 from loguru import logger
+
+try:
+    from .config import settings
+except (ImportError, ValueError):
+    from config import settings
 import re
 
 
@@ -122,7 +127,6 @@ def get_hk_option_price_from_futu(stock_code: str, raw_description: str, date: s
     """
     try:
         import futu as ft
-        from config import settings
         
         # Try to parse from raw_description first, then stock_code
         option_info = parse_hk_option_description(raw_description or stock_code)

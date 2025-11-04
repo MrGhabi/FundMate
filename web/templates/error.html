@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Error - FundMate{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="error-content">
+        <h2>Oops! Something went wrong</h2>
+        <div class="error-message">
+            <p>{{ error }}</p>
+        </div>
+
+        <div class="button-group">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Go to Dashboard</a>
+            <button class="btn btn-secondary" onclick="history.back()">Go Back</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

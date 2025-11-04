@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Positions - FundMate{% endblock %}
+
+{% block content %}
+<div class="positions-page">
+    <h2 class="page-title">Portfolio Positions</h2>
+    <p class="date-display">Data as of: <strong>{{ date }}</strong></p>
+
+    <!-- Filters -->
+    <div class="filters">
+        <div class="filter-group">
+            <label for="broker-filter">Filter by Broker:</label>
+            <select id="broker-filter" onchange="filterByBroker(this.value)">
+                <option value="all" {% if selected_broker == 'all' %}selected{% endif %}>All Brokers</option>
+                {% for broker in brokers %}
+                <option value="{{ broker }}" {% if selected_broker == broker %}selected{% endif %}>{{ broker }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label for="search-input">Search:</label>
+            <input type="text" id="search-input" placeholder="Search symbol or description..." onkeyup="searchPositions()">
+        </div>
+    </div>
+
+    <!-- Positions Summary -->
+    <div class="summary-bar">
+        <div class="summary-item">
+            <span class="label">Total Positions:</span>
+            <span class="value" id="position-count">{{ positions | length }}</span>
+        </div>
+        <div class="summary-item">
+            <span class="label">Total Holdings:</span>
+            <span class="value" id="total-holdings">
+                {{ positions | sum(attribute='holding') | int if positions else 0 }}
+            </span>
+        </div>
+    </div>
+
+    <!-- Positions Table -->
+    <div class="section">
+        <table class="data-table" id="positions-table">
+            <thead>
+                <tr>
+                    <th onclick="sortTable(0)">Stock Code ↕</th>
+                    <th onclick="sortTable(1)">Broker ↕</th>
+                    <th onclick="sortTable(2)">Account ID ↕</th>
+                    <th class="text-right" onclick="sortTable(3)">Holding ↕</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pos in positions %}
+                <tr>
+                    <td><strong>{{ pos.stock_code or pos.symbol or 'N/A' }}</strong></td>
+                    <td><span class="badge badge-{{ (pos.broker_name or pos.broker or 'default') | lower }}">{{ pos.broker_name or pos.broker }}</span></td>
+                    <td>{{ pos.account_id or 'N/A' }}</td>
+                    <td class="text-right">{{ pos.holding or pos.quantity or 0 }}</td>
+                    <td>{{ pos.date or 'N/A' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if not positions %}
+        <div class="empty-state">
+            <p>No positions found for the selected filters.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Export Options -->
+    <div class="section actions">
+        <h3 class="section-title">Export Data</h3>
+        <div class="button-group">
+            <button class="btn btn-secondary" onclick="exportToCSV()">Export to CSV</button>
+            <button class="btn btn-secondary" onclick="window.print()">Print Report</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function filterByBroker(broker) {
+    const params = new URLSearchParams(window.location.search);
+    params.set('broker', broker);
+    window.location.search = params.toString();
+}
+
+function searchPositions() {
+    const input = document.getElementById('search-input');
+    const filter = input.value.toUpperCase();
+    const table = document.getElementById('positions-table');
+    const rows = table.getElementsByTagName('tr');
+
+    let visibleCount = 0;
+    let totalValue = 0;
+
+    for (let i = 1; i < rows.length; i++) {
+        const symbolCell = rows[i].getElementsByTagName('td')[0];
+        const descCell = rows[i].getElementsByTagName('td')[1];
+
+        if (symbolCell && descCell) {
+            const symbolText = symbolCell.textContent || symbolCell.innerText;
+            const descText = descCell.textContent || descCell.innerText;
+
+            if (symbolText.toUpperCase().indexOf(filter) > -1 ||
+                descText.toUpperCase().indexOf(filter) > -1) {
+                rows[i].style.display = '';
+                visibleCount++;
+            } else {
+                rows[i].style.display = 'none';
+            }
+        }
+    }
+
+    document.getElementById('position-count').textContent = visibleCount;
+}
+
+function sortTable(columnIndex) {
+    const table = document.getElementById('positions-table');
+    const rows = Array.from(table.rows).slice(1);
+    const currentDir = table.getAttribute('data-sort-dir') || 'asc';
+    const newDir = currentDir === 'asc' ? 'desc' : 'asc';
+
+    rows.sort((a, b) => {
+        const aVal = a.cells[columnIndex].textContent.trim();
+        const bVal = b.cells[columnIndex].textContent.trim();
+
+        const aNum = parseFloat(aVal.replace(/[^0-9.-]/g, ''));
+        const bNum = parseFloat(bVal.replace(/[^0-9.-]/g, ''));
+
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+            return newDir === 'asc' ? aNum - bNum : bNum - aNum;
+        }
+
+        return newDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    });
+
+    rows.forEach(row => table.tBodies[0].appendChild(row));
+    table.setAttribute('data-sort-dir', newDir);
+}
+
+function exportToCSV() {
+    const table = document.getElementById('positions-table');
+    let csv = [];
+
+    for (let row of table.rows) {
+        let rowData = [];
+        for (let cell of row.cells) {
+            rowData.push('"' + cell.textContent.trim().replace(/"/g, '""') + '"');
+        }
+        csv.push(rowData.join(','));
+    }
+
+    const csvContent = csv.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'positions_{{ date }}.csv';
+    a.click();
+}
+</script>
+{% endblock %}

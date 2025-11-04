@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}About - FundMate{% endblock %}
+
+{% block content %}
+<div class="about-page">
+    <h2 class="page-title">About FundMate</h2>
+
+    <div class="section">
+        <h3 class="section-title">What is FundMate?</h3>
+        <p>FundMate is a production-ready financial data processor that extracts cash holdings and position data from broker statements using LLM-powered data extraction.</p>
+        <p>It processes both PDF statements (image-based) and Excel files (structured data) from 12+ different brokers, providing real-time asset valuation with market prices.</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">Key Features</h3>
+        <ul style="line-height: 2; margin-left: 2rem;">
+            <li><strong>Multi-Broker Support</strong> - Processes statements from 12+ major brokers</li>
+            <li><strong>LLM-Powered Extraction</strong> - Uses Google Gemini AI for intelligent data extraction</li>
+            <li><strong>Real-Time Pricing</strong> - Fetches current market prices via Futu OpenD API</li>
+            <li><strong>Option Contract Handling</strong> - Intelligent multiplier logic for US and HK options</li>
+            <li><strong>Multi-Currency Support</strong> - Automatic conversion (USD, CNY, HKD)</li>
+            <li><strong>Concurrent Processing</strong> - Fast parallel processing of multiple accounts</li>
+            <li><strong>Web Interface</strong> - Modern, responsive dashboard for data visualization</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">Supported Brokers</h3>
+        <div class="broker-badges">
+            <span class="badge">IB (Interactive Brokers)</span>
+            <span class="badge">MOOMOO</span>
+            <span class="badge">FUTU</span>
+            <span class="badge">MS (Morgan Stanley)</span>
+            <span class="badge">GS (Goldman Sachs)</span>
+            <span class="badge">LB (Longbridge)</span>
+            <span class="badge">TIGER</span>
+            <span class="badge">WEBULL</span>
+            <span class="badge">SC (Standard Chartered)</span>
+            <span class="badge">HSBC</span>
+            <span class="badge">USMART</span>
+            <span class="badge">FIRST</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">Technology Stack</h3>
+        <div class="tech-stack">
+            <div class="tech-item">
+                <strong>Backend:</strong> Python 3.10, Flask
+            </div>
+            <div class="tech-item">
+                <strong>AI/ML:</strong> Google Gemini 2.5 Pro
+            </div>
+            <div class="tech-item">
+                <strong>Data Processing:</strong> Pandas, PyArrow (Parquet)
+            </div>
+            <div class="tech-item">
+                <strong>PDF Processing:</strong> pdfplumber, pdf2image
+            </div>
+            <div class="tech-item">
+                <strong>Market Data:</strong> Futu OpenD API, akshare
+            </div>
+            <div class="tech-item">
+                <strong>Frontend:</strong> Jinja2, Vanilla JavaScript, CSS3
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">Data Flow</h3>
+        <div class="info-box">
+            <pre style="background: transparent; padding: 0; overflow-x: auto;">
+Input PDFs/Excel
+    ↓
+PDF Processing (Decryption, Page Filtering)
+    ↓
+LLM Extraction (Structured Data from Images)
+    ↓
+Price Fetching (Real-time Market Prices)
+    ↓
+Cross-Broker Optimization (Batch Queries)
+    ↓
+Output (Parquet/CSV) → Web Interface
+            </pre>
+        </div>
+    </div>
+
+    <div class="section actions">
+        <h3 class="section-title">Get Started</h3>
+        <p>To start using FundMate:</p>
+        <ol style="line-height: 2; margin-left: 2rem; margin-top: 1rem;">
+            <li>Ensure Futu OpenD is running on port 11111</li>
+            <li>Process your broker statements: <code>python src/main.py ./data/statements --date YYYY-MM-DD</code></li>
+            <li>View your portfolio data in this web interface</li>
+        </ol>
+        <div class="button-group" style="margin-top: 2rem;">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Go to Dashboard</a>
+        </div>
+    </div>
+</div>
+
+<style>
+.tech-stack {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.tech-item {
+    padding: 1rem;
+    background-color: var(--background);
+    border-radius: 0.375rem;
+    border-left: 4px solid var(--primary-color);
+}
+
+.tech-item strong {
+    color: var(--primary-color);
+}
+
+code {
+    background-color: var(--background);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.875rem;
+}
+</style>
+{% endblock %}

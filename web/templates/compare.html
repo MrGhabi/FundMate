@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Dates - FundMate{% endblock %}
+
+{% block content %}
+<div class="compare-page">
+    <h2 class="page-title">Historical Comparison</h2>
+
+    <!-- Date Selectors -->
+    <div class="comparison-selectors">
+        <div class="selector-group">
+            <label for="date1-select">Compare Date 1:</label>
+            <select id="date1-select" onchange="updateComparison('date1', this.value)">
+                {% for d in available_dates %}
+                <option value="{{ d }}" {% if d == date1 %}selected{% endif %}>{{ d }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="vs-separator">VS</div>
+
+        <div class="selector-group">
+            <label for="date2-select">Compare Date 2:</label>
+            <select id="date2-select" onchange="updateComparison('date2', this.value)">
+                {% for d in available_dates %}
+                <option value="{{ d }}" {% if d == date2 %}selected{% endif %}>{{ d }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <!-- Overall Change Summary -->
+    <div class="section">
+        <h3 class="section-title">Portfolio Change: {{ comparison.date2 }} → {{ comparison.date1 }}</h3>
+
+        <div class="change-cards">
+            <div class="card {% if comparison.portfolio_change >= 0 %}positive{% else %}negative{% endif %}">
+                <div class="card-header">Portfolio Value Change</div>
+                <div class="card-value">
+                    {{ comparison.portfolio_change | format_currency('USD') }}
+                </div>
+                <div class="card-subtext">
+                    {% if comparison.portfolio_change_pct >= 0 %}↑{% else %}↓{% endif %}
+                    {{ comparison.portfolio_change_pct | abs | format_percent }}
+                </div>
+            </div>
+
+            <div class="card {% if comparison.cash_change >= 0 %}positive{% else %}negative{% endif %}">
+                <div class="card-header">Cash Change</div>
+                <div class="card-value">
+                    {{ comparison.cash_change | format_currency('USD') }}
+                </div>
+                <div class="card-subtext">
+                    {% if comparison.cash_change >= 0 %}Increased{% else %}Decreased{% endif %}
+                </div>
+            </div>
+
+            <div class="card {% if comparison.positions_change >= 0 %}positive{% else %}negative{% endif %}">
+                <div class="card-header">Positions Value Change</div>
+                <div class="card-value">
+                    {{ comparison.positions_change | format_currency('USD') }}
+                </div>
+                <div class="card-subtext">
+                    {% if comparison.positions_change >= 0 %}Increased{% else %}Decreased{% endif %}
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Position Count Change</div>
+                <div class="card-value">
+                    {% if comparison.position_count_change >= 0 %}+{% endif %}{{ comparison.position_count_change }}
+                </div>
+                <div class="card-subtext">
+                    {{ comparison.summary2.position_count }} → {{ comparison.summary1.position_count }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Side-by-Side Comparison -->
+    <div class="section">
+        <h3 class="section-title">Detailed Comparison</h3>
+
+        <div class="comparison-table-wrapper">
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th class="text-right">{{ date2 }}</th>
+                        <th class="text-right">{{ date1 }}</th>
+                        <th class="text-right">Change</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Total Portfolio Value</strong></td>
+                        <td class="text-right">{{ comparison.summary2.total_portfolio_value_usd | format_currency('USD') }}</td>
+                        <td class="text-right">{{ comparison.summary1.total_portfolio_value_usd | format_currency('USD') }}</td>
+                        <td class="text-right {% if comparison.portfolio_change >= 0 %}positive{% else %}negative{% endif %}">
+                            {{ comparison.portfolio_change | format_currency('USD') }}
+                            ({{ comparison.portfolio_change_pct | format_percent }})
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>Total Cash</strong></td>
+                        <td class="text-right">{{ comparison.summary2.total_cash_usd | format_currency('USD') }}</td>
+                        <td class="text-right">{{ comparison.summary1.total_cash_usd | format_currency('USD') }}</td>
+                        <td class="text-right {% if comparison.cash_change >= 0 %}positive{% else %}negative{% endif %}">
+                            {{ comparison.cash_change | format_currency('USD') }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>Total Positions Value</strong></td>
+                        <td class="text-right">{{ comparison.summary2.total_positions_value_usd | format_currency('USD') }}</td>
+                        <td class="text-right">{{ comparison.summary1.total_positions_value_usd | format_currency('USD') }}</td>
+                        <td class="text-right {% if comparison.positions_change >= 0 %}positive{% else %}negative{% endif %}">
+                            {{ comparison.positions_change | format_currency('USD') }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>Number of Positions</strong></td>
+                        <td class="text-right">{{ comparison.summary2.position_count }}</td>
+                        <td class="text-right">{{ comparison.summary1.position_count }}</td>
+                        <td class="text-right">
+                            {% if comparison.position_count_change >= 0 %}+{% endif %}{{ comparison.position_count_change }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>Number of Brokers</strong></td>
+                        <td class="text-right">{{ comparison.summary2.broker_count }}</td>
+                        <td class="text-right">{{ comparison.summary1.broker_count }}</td>
+                        <td class="text-right">
+                            {% set broker_change = comparison.summary1.broker_count - comparison.summary2.broker_count %}
+                            {% if broker_change >= 0 %}+{% endif %}{{ broker_change }}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>Cash Allocation %</strong></td>
+                        <td class="text-right">
+                            {{ comparison.summary2.cash_allocation_pct | format_percent }}
+                        </td>
+                        <td class="text-right">
+                            {{ comparison.summary1.cash_allocation_pct | format_percent }}
+                        </td>
+                        <td class="text-right">
+                            {% set cash_pct_change = comparison.summary1.cash_allocation_pct - comparison.summary2.cash_allocation_pct %}
+                            {% if cash_pct_change >= 0 %}+{% endif %}{{ cash_pct_change | format_percent }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Cash by Currency Comparison -->
+    <div class="section">
+        <h3 class="section-title">Cash Holdings by Currency</h3>
+
+        <div class="comparison-table-wrapper">
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Currency</th>
+                        <th class="text-right">{{ date2 }}</th>
+                        <th class="text-right">{{ date1 }}</th>
+                        <th class="text-right">Change</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set all_currencies = (comparison.summary1.cash_by_currency.keys() | list + comparison.summary2.cash_by_currency.keys() | list) | unique | sort %}
+                    {% for currency in all_currencies %}
+                    <tr>
+                        <td><strong>{{ currency }}</strong></td>
+                        <td class="text-right">
+                            {{ comparison.summary2.cash_by_currency.get(currency, 0) | format_currency(currency) }}
+                        </td>
+                        <td class="text-right">
+                            {{ comparison.summary1.cash_by_currency.get(currency, 0) | format_currency(currency) }}
+                        </td>
+                        <td class="text-right">
+                            {% set change = comparison.summary1.cash_by_currency.get(currency, 0) - comparison.summary2.cash_by_currency.get(currency, 0) %}
+                            <span class="{% if change >= 0 %}positive{% else %}negative{% endif %}">
+                                {{ change | format_currency(currency) }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="section actions">
+        <div class="button-group">
+            <button class="btn btn-secondary" onclick="window.print()">Print Comparison</button>
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Back to Dashboard</a>
+        </div>
+    </div>
+</div>
+
+<script>
+function updateComparison(dateParam, newValue) {
+    const params = new URLSearchParams(window.location.search);
+    params.set(dateParam, newValue);
+    window.location.search = params.toString();
+}
+</script>
+{% endblock %}
