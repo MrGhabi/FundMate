@@ -51,10 +51,17 @@ class TestCrossBrokerAggregation:
         )
         
         csv_df = pd.read_csv(saved_files['portfolio_csv'])
-        data_rows = csv_df[csv_df['broker_name'] != '[SUMMARY]']
+        data_rows = csv_df[csv_df['broker_name'] != '[SUMMARY]'].copy()
         
         # Find stocks that appear in multiple brokers
-        stock_counts = data_rows['stock_code'].value_counts()
+        # For options, use raw_description to distinguish different contracts
+        # For regular stocks, use stock_code
+        data_rows['unique_key'] = data_rows.apply(
+            lambda row: row['raw_description'] if 'OPTION' in str(row['stock_code']).upper() else row['stock_code'],
+            axis=1
+        )
+        
+        stock_counts = data_rows['unique_key'].value_counts()
         cross_broker_stocks = stock_counts[stock_counts > 1]
         
         if len(cross_broker_stocks) > 0:
@@ -62,14 +69,14 @@ class TestCrossBrokerAggregation:
             for stock, count in cross_broker_stocks.items():
                 print(f"{stock}: appears in {count} brokers")
                 
-                # Verify same stock has same price across brokers
-                stock_data = data_rows[data_rows['stock_code'] == stock]
+                # Verify same stock/option has same price across brokers
+                stock_data = data_rows[data_rows['unique_key'] == stock]
                 prices = stock_data['final_price'].dropna().unique()
                 
                 if len(prices) > 0:
                     print(f"  Price(s): {prices}")
                     # Should have only one price (deduplicated)
-                    assert len(prices) == 1, f"Stock {stock} has multiple prices: {prices}"
+                    assert len(prices) == 1, f"Stock/Option {stock} has multiple prices: {prices}"
         
         # Verify total calculation is sum of cash + positions
         summary = csv_df[csv_df['broker_name'] == '[SUMMARY]']

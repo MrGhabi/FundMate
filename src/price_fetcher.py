@@ -112,7 +112,7 @@ def get_price_futu(symbol: str, date: str) -> Optional[float]:
                 pass
 
 
-def get_stock_price(symbol: str, date: str, source: str = None, raw_description: str = None) -> Optional[float]:
+def get_stock_price(symbol: str, date: str, source: str = None, raw_description: str = None) -> tuple[Optional[float], Optional[str]]:
     """
     Get stock price for given symbol and date
     
@@ -123,17 +123,21 @@ def get_stock_price(symbol: str, date: str, source: str = None, raw_description:
         raw_description: Optional raw description for better option parsing
     
     Returns:
-        Price as float, or None if unavailable
+        Tuple of (price, currency) where:
+        - price: float or None
+        - currency: 'USD', 'HKD', or None
+        Currency is determined by API type (US vs HK)
     """
     # Option detection and processing - minimal implementation
     description = raw_description or symbol
     
     # Unified option detection (consistent with is_option_contract in utils.py)
-    # Support both full keywords (CALL/PUT/OPTION) and single-letter format (C/P)
+    # Support full keywords (CALL/PUT/OPTION), space+letter (C/P), and letter+digits (P41, C300)
     upper_desc = description.upper()
     is_option = (
         any(keyword in upper_desc for keyword in ['OPTION', 'CALL', 'PUT']) or
-        upper_desc.endswith(' C') or upper_desc.endswith(' P')
+        upper_desc.endswith(' C') or upper_desc.endswith(' P') or
+        re.search(r'[\s][CP]\d+', upper_desc)  # Matches " P41", " C300", etc.
     )
     
     if is_option:
@@ -149,14 +153,14 @@ def get_stock_price(symbol: str, date: str, source: str = None, raw_description:
         if is_us_option:
             price, _ = get_us_option_price_from_futu(symbol, description, date)
             if price:
-                return price
+                return (price, 'USD')  # US option API returns USD
         
         # Try HK option format (e.g., "CLI 250929 19.00 CALL")
         # Check for HKATS code pattern: 3 letters + 6 digits
         if re.search(r'[A-Z]{3}\s+\d{6}', description):
             price = get_hk_option_price_from_futu(symbol, description, date)
             if price:
-                return price
+                return (price, 'HKD')  # HK option API returns HKD
         
         # Fallback to Morgan option format
         option_info = parse_morgan_option(symbol)
@@ -175,22 +179,34 @@ def get_stock_price(symbol: str, date: str, source: str = None, raw_description:
             
             option_code = find_closest_futu_option(option_info['underlying'], option_info['strike'], expiry_date)
             if option_code:
-                return get_option_price_futu(option_code, date)
+                price = get_option_price_futu(option_code, date)
+                if price:
+                    # Morgan OTC options are HK-based
+                    return (price, 'HKD')
     
     clean_symbol = normalize_symbol(symbol)
     if not clean_symbol:
-        return None
+        return (None, None)
     
     # Simple: use configured source or override
     use_source = source or settings.PRICE_SOURCE
     
+    # Determine currency based on symbol format
+    # HK stocks: numeric codes (00700, 01810, etc.)
+    # US stocks: letter codes (AAPL, TSLA, etc.)
+    is_hk_stock = clean_symbol.isdigit()
+    currency = 'HKD' if is_hk_stock else 'USD'
+    
     if use_source == "futu":
-        return get_price_futu(clean_symbol, date)
+        price = get_price_futu(clean_symbol, date)
+        return (price, currency) if price else (None, None)
     elif use_source == "akshare":
-        return get_price_akshare(clean_symbol, date)
+        price = get_price_akshare(clean_symbol, date)
+        return (price, currency) if price else (None, None)
     else:
         # Default to futu for unknown sources
-        return get_price_futu(clean_symbol, date)
+        price = get_price_futu(clean_symbol, date)
+        return (price, currency) if price else (None, None)
 
 
 def calculate_portfolio_value(holdings, date: str, source: str = None, exchange_rates: dict = None, image_processor=None):
@@ -229,17 +245,33 @@ def calculate_portfolio_value(holdings, date: str, source: str = None, exchange_
             continue
         
         # Priority: API price > broker price
-        api_price = get_stock_price(symbol, date, source, raw_description)  # Try API first (with raw_description for better option parsing)
+        api_price, api_currency = get_stock_price(symbol, date, source, raw_description)  # Returns (price, currency)
         broker_price = holding.get('BrokerPrice')
+        broker_currency = holding.get('PriceCurrency', 'USD')
         
         if api_price is not None and api_price > 0.0:
             price = api_price
+            price_currency = api_currency or 'USD'
             price_source = "API"
         elif broker_price is not None:
             price = broker_price
             price_source = "Broker"
+            
+            # Strict currency validation - fail fast if invalid
+            if not broker_currency or broker_currency not in ['USD', 'HKD', 'CNY']:
+                raise RuntimeError(
+                    f"Invalid or missing broker currency for {symbol}\n"
+                    f"  Broker: {holding.get('Broker', 'Unknown')}\n"
+                    f"  StockCode: {symbol}\n"
+                    f"  RawDescription: {raw_description or 'N/A'}\n"
+                    f"  BrokerCurrency: {broker_currency}\n"
+                    f"  Expected: One of ['USD', 'HKD', 'CNY']\n"
+                    f"  Action: Fix prompt to extract correct PriceCurrency field"
+                )
+            price_currency = broker_currency
         else:
             price = None
+            price_currency = 'USD'
             price_source = "Failed"
         
         # Calculate position value (preserve sign for short/long positions)
@@ -258,9 +290,6 @@ def calculate_portfolio_value(holdings, date: str, source: str = None, exchange_
         
         # Use original symbol for display, not the raw description
         display_symbol = holding.get('symbol') or holding.get('StockCode')
-        
-        # Determine price currency
-        price_currency = holding.get('PriceCurrency', 'USD')  # Default to USD for API prices
         
         # Convert individual position value to USD for portfolio total
         if price_currency != 'USD' and value > 0:

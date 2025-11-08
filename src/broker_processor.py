@@ -25,6 +25,32 @@ except (ImportError, ValueError):
     from exchange_rate_handler import exchange_handler
 
 
+def extract_occ_code_if_present(stock_code: str) -> str:
+    """
+    Extract OCC code if present in mixed format.
+    
+    Example: "SBET 260116 41.00P SBET260116P41000" → "SBET260116P41000"
+    
+    Args:
+        stock_code: Original stock code from broker
+        
+    Returns:
+        Extracted OCC code if found, otherwise original code
+    """
+    if not stock_code or not isinstance(stock_code, str):
+        return stock_code
+    
+    # Pattern: TICKER + 6 digits + C/P + 5 digits (OCC format)
+    match = re.search(r'([A-Z]+\d{6}[CP]\d{5})', stock_code)
+    if match:
+        extracted = match.group(1)
+        if extracted != stock_code:
+            logger.debug(f"Extracted OCC code from mixed format: '{stock_code}' → '{extracted}'")
+        return extracted
+    
+    return stock_code
+
+
 @dataclass
 class ProcessedResult:
     """
@@ -63,7 +89,7 @@ class BrokerStatementProcessor:
     
     def process_folder(self, broker_folder: str, image_output_folder: str, 
                       date: str = None, broker: str = None, force: bool = False, 
-                      max_workers: int = 10) -> Tuple[Optional[List], Optional[dict], Optional[str]]:
+                      max_workers: int = 10, skip_logging_setup: bool = False) -> Tuple[Optional[List], Optional[dict], Optional[str]]:
         """
         Process broker folder with complete workflow:
         1. Validate date format
@@ -81,6 +107,7 @@ class BrokerStatementProcessor:
             broker: Specific broker to process, or None for all
             force: Force re-conversion of PDFs even if images exist
             max_workers: Maximum number of concurrent threads
+            skip_logging_setup: If True, skip logging setup (used by TC mode)
             
         Returns:
             Tuple: (processed_results, exchange_rates, date) or (None, None, None) if processing fails
@@ -90,8 +117,9 @@ class BrokerStatementProcessor:
             print(f"ERROR: Invalid date format: {date}. Expected YYYY-MM-DD")
             return None, None, None
         
-        # Step 2: Setup logging
-        setup_logging(settings.LOG_DIR, date)
+        # Step 2: Setup logging (skip if called from TC mode)
+        if not skip_logging_setup:
+            setup_logging(settings.LOG_DIR, date)
         
         # Step 3: Log processing start
         logger.info(f"Starting folder processing: {broker_folder}")
@@ -157,8 +185,15 @@ class BrokerStatementProcessor:
             List of ProcessedResult objects with Excel position data
         """
         try:
+            # 检测归档模式并传递给 Excel parser
+            archive_mode = self._is_archive_mode(broker_folder)
+            
             # Parse Excel data using ExcelPositionParser
-            excel_data = self.excel_parser.parse_directory(broker_folder, target_date=date)
+            excel_data = self.excel_parser.parse_directory(
+                broker_folder, 
+                target_date=date,
+                archive_mode=archive_mode
+            )
             
             if not excel_data:
                 logger.info("No Excel data found in broker folder")
@@ -260,30 +295,17 @@ class BrokerStatementProcessor:
                 first_position = unique_symbols[symbol][0][0].positions[unique_symbols[symbol][0][1]]
                 raw_description = first_position.get('RawDescription')
                 
-                price = get_stock_price(symbol, date, settings.PRICE_SOURCE, raw_description)
-                if price is not None and price > 0.0:
-                    # Determine currency based on symbol format
-                    if symbol.isdigit():
-                        # Hong Kong stocks (numeric codes) are priced in HKD
-                        price_currency = 'HKD'
-                    elif 'CALL' in symbol.upper() or 'PUT' in symbol.upper():
-                        # Check if HK option - use multiple detection methods
-                        is_hk_option = (
-                            '.HK' in symbol.upper() or  # Check for .HK suffix
-                            '.ΗΚ' in symbol or  # Check for Greek letters .ΗΚ
-                            (raw_description and re.search(r'\b[A-Z]{3}\s+\d{6}\b', raw_description))  # HKATS format in raw_description
-                        )
-                        price_currency = 'HKD' if is_hk_option else 'USD'
-                    else:
-                        # US stocks (letter codes) are priced in USD
-                        price_currency = 'USD'
-                    
+                # get_stock_price now returns (price, currency) tuple
+                price, api_currency = get_stock_price(symbol, date, settings.PRICE_SOURCE, raw_description)
+                
+                if price is not None and price > 0.0 and api_currency:
+                    # Use API-provided currency (determined by API type: US vs HK)
                     optimized_prices[symbol] = {
                         'price': price,
                         'source': settings.PRICE_SOURCE.title(),  # 'Futu' or 'Akshare'
-                        'currency': price_currency
+                        'currency': api_currency  # Use currency from API (USD for US, HKD for HK)
                     }
-                    logger.debug(f"Got price for {symbol}: ${price}")
+                    logger.debug(f"Got price for {symbol}: ${price} {api_currency}")
                 else:
                     logger.debug(f"No price available for {symbol}")
             except Exception as e:
@@ -361,6 +383,22 @@ class BrokerStatementProcessor:
         
         logger.success("Cross-broker pricing optimization completed")
     
+    def _is_archive_mode(self, broker_folder: str) -> bool:
+        """
+        检测是否为归档模式（通过路径判断）
+        归档模式：路径包含 'archives'
+        """
+        return 'archives' in Path(broker_folder).parts
+    
+    def _match_archive_filename(self, filename: str, broker: str, date: str) -> bool:
+        """
+        检查归档文件名是否匹配券商和日期
+        归档文件名格式: {BROKER}_{YYYY-MM-DD}_{ID}.ext
+        """
+        # 允许大小写不敏感的匹配
+        pattern = rf"{re.escape(broker)}_({re.escape(date)})_.*"
+        return re.match(pattern, filename, re.IGNORECASE) is not None
+    
     def _process_broker_pdfs(self, pdf_root: str, exchange_rates: dict, broker_filter: str = None, date: str = None, max_workers: int = 10, force: bool = False) -> List[ProcessedResult]:
         """
         Process all PDFs in broker folder using concurrent processing
@@ -381,6 +419,13 @@ class BrokerStatementProcessor:
             logger.warning(f"PDF root directory does not exist: {pdf_root}")
             return []
         
+        # 检测归档模式
+        archive_mode = self._is_archive_mode(pdf_root)
+        if archive_mode:
+            logger.info("📦 Using ARCHIVE mode (file name based filtering)")
+        else:
+            logger.info("📁 Using STATEMENT mode (directory based structure)")
+        
         # Collect all PDF processing tasks
         pdf_tasks = []
         
@@ -399,27 +444,48 @@ class BrokerStatementProcessor:
             if broker_filter and broker_name.upper() != broker_filter.upper():
                 continue
             
-            # Determine search paths (prefer date-specific folder if available)
-            search_paths = []
-            if date:
-                date_dir = broker_dir / date
-                if date_dir.exists():
-                    search_paths.append(date_dir)
-            
-            if not search_paths:
-                search_paths.append(broker_dir)
-
-            # Find PDF files (support nested date folders)
+            # 根据模式选择不同的文件查找逻辑
             pdf_files = []
-            for path in search_paths:
-                pdf_files.extend(
-                    p for p in path.rglob("*.pdf")
-                    if p.is_file() and "__MACOSX" not in p.parts
-                )
+            
+            if archive_mode:
+                # 归档模式：从券商目录查找匹配日期的文件
+                if not date:
+                    logger.error(f"Archive mode requires --date parameter")
+                    raise ValueError("Archive mode requires date parameter")
+                
+                # 查找文件名匹配 {券商}_{日期}_* 的PDF文件
+                all_pdfs = list(broker_dir.glob("*.pdf"))
+                for pdf_file in all_pdfs:
+                    if self._match_archive_filename(pdf_file.name, broker_name, date):
+                        pdf_files.append(pdf_file)
+                
+                if not pdf_files:
+                    logger.warning(f"No archived PDF files found for {broker_name} on {date}")
+                    logger.warning(f"Expected filename pattern: {broker_name}_{date}_*.pdf")
+                    continue
+                    
+            else:
+                # Statement模式：原有逻辑
+                # Determine search paths (prefer date-specific folder if available)
+                search_paths = []
+                if date:
+                    date_dir = broker_dir / date
+                    if date_dir.exists():
+                        search_paths.append(date_dir)
+                
+                if not search_paths:
+                    search_paths.append(broker_dir)
 
-            if not pdf_files:
-                logger.info(f"No PDF files found for {broker_name}")
-                continue
+                # Find PDF files (support nested date folders)
+                for path in search_paths:
+                    pdf_files.extend(
+                        p for p in path.rglob("*.pdf")
+                        if p.is_file() and "__MACOSX" not in p.parts
+                    )
+
+                if not pdf_files:
+                    logger.info(f"No PDF files found for {broker_name}")
+                    continue
             
             logger.info(f"Found {len(pdf_files)} PDF files for {broker_name}")
             
@@ -509,6 +575,11 @@ class BrokerStatementProcessor:
                 # Map 'Description' to 'RawDescription' for MMF detection
                 if 'Description' in position and 'RawDescription' not in position:
                     position['RawDescription'] = position['Description']
+                
+                # Extract OCC code if present in mixed format (e.g., "SBET 260116 41.00P SBET260116P41000")
+                stock_code = position.get('StockCode', '')
+                if stock_code and ' ' in stock_code and re.search(r'\d{6}[CP]\d{5}', stock_code):
+                    position['StockCode'] = extract_occ_code_if_present(stock_code)
             
             processed_result = ProcessedResult(
                 broker_name=broker_name,

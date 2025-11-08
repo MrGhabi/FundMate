@@ -64,37 +64,95 @@ FundMate is a production-ready financial data processor that extracts cash holdi
 **--max-workers N**
   Maximum number of concurrent processing threads. Default: 10. Increase for faster processing on multi-core systems.
 
+### Trade Confirmation Mode
+
+**--use-tc**
+  Enable trade confirmation mode for incremental portfolio updates. This mode uses trade confirmation files to update portfolio from a base date to the target date, useful when broker statements are delayed or incorrect.
+
+**--base-date DATE**
+  Base date for trade confirmation mode (YYYY-MM-DD format). If not specified, automatically uses the latest available portfolio date. This should be the date of the last complete broker statement.
+
+**--tc-folder PATH**
+  Path to trade confirmation folder. Default: `data/archives/TradeConfirmation`. Trade confirmation files must follow the naming convention: `TC-{YYYY-MM-DD}-{original_name}.xlsx`
+
 ## DIRECTORY STRUCTURE
 
-FundMate expects broker statements organized by broker:
+FundMate supports two directory structures:
+
+### Archive Mode (Recommended)
+
+Organized by broker with date in filename:
 
 ```
-statements/
+data/archives/
+├── IB/
+│   ├── IB_2025-02-28_U9018171.pdf
+│   ├── IB_2025-06-30_U9018171.pdf
+│   └── IB_2025-07-31_U9018171.pdf
+├── HUATAI/
+│   ├── HUATAI_2025-02-28_20250228.pdf
+│   └── HUATAI_2025-06-30_202506.pdf
+├── MS/             # Excel broker
+│   ├── MS_2025-02-28_OptionDaily.XLS
+│   └── MS_2025-06-30_OptionDaily.XLS
+├── TradeConfirmation/  # Trade confirmation files
+│   ├── TC-2025-07-21-Asia Internal Trade Confirmation - 20250721.xlsx
+│   ├── TC-2025-07-21-US Trading Confirmation 0721_2025.xlsx
+│   ├── TC-2025-07-22-US Trading Confirmation 0722_2025.xlsx
+│   └── TC-2025-09-22-Internal Trade Confirmation - 20250922.xlsx
+└── ...
+```
+
+**Naming Convention**: `{BROKER}_{YYYY-MM-DD}_{ACCOUNT_ID}.{ext}`
+
+**Benefits**:
+- Centralized management by broker, no date directory fragmentation
+- Filename contains complete information for easy lookup
+- Supports multiple accounts (distinguished by account identifier)
+
+### Statement Mode (Legacy)
+
+Date-based directory structure:
+
+```
+data/20250228_Statement/
 ├── IB/
 │   └── statement.pdf
 ├── HUATAI/
 │   └── account.pdf
-├── LB/
-│   └── account.pdf
-├── MS/             # Excel broker
+├── MS/
 │   └── options.xlsx
 └── ...
 ```
 
-**Note**: Date is specified via `--date` parameter, not through directory structure.
+**Note**: 
+- Both modes can coexist, program auto-detects
+- Archive mode: pass `data/archives` path
+- Statement mode: pass `data/YYYYMMDD_Statement` path
 
 ## EXAMPLES
 
 ### Basic Usage
+
+**Archive Mode** (Recommended):
 ```bash
 # Process all brokers for a specific date
-python src/main.py ./data/statements --date 2025-02-28
+python src/main.py data/archives --date 2025-02-28
 
 # Process specific broker only
-python src/main.py ./data/statements --date 2025-02-28 --broker IB
+python src/main.py data/archives --date 2025-02-28 --broker IB
 
 # Force reprocessing with higher concurrency  
-python src/main.py ./data/statements --date 2025-02-28 -f --max-workers 8
+python src/main.py data/archives --date 2025-02-28 -f --max-workers 8
+```
+
+**Statement Mode** (Legacy):
+```bash
+# Process date-specific directory
+python src/main.py data/20250228_Statement --date 2025-02-28
+
+# Process specific broker only
+python src/main.py data/20250228_Statement --date 2025-02-28 --broker IB
 ```
 
 ### Advanced Usage
@@ -105,6 +163,61 @@ python src/main.py ./data/statements --date 2025-02-28 --output ./custom/images
 # Debug single broker with detailed logging
 python src/main.py ./data/statements --date 2025-02-28 --broker HUATAI --max-workers 1
 ```
+
+### Trade Confirmation Mode
+
+Use trade confirmation files to update portfolio when broker statements are delayed or incorrect:
+
+```bash
+# Auto-detect base date and update to target date
+python src/main.py data/archives --date 2025-07-22 --use-tc
+
+# Specify base date explicitly
+python src/main.py data/archives --date 2025-07-22 --use-tc --base-date 2025-07-18
+
+# Custom trade confirmation folder
+python src/main.py data/archives --date 2025-07-22 --use-tc \
+  --base-date 2025-07-18 \
+  --tc-folder /custom/path/to/TradeConfirmation
+```
+
+**How it works**:
+1. Loads the base portfolio from the specified (or auto-detected) base date
+2. Applies all trade confirmations between base date and target date
+3. Updates prices to the target date
+4. Saves the updated portfolio
+
+**Prerequisites**:
+- Base portfolio must exist (run normal mode first for the base date)
+- Trade confirmation files must be preprocessed with standard naming: `TC-{YYYY-MM-DD}-{original_name}.xlsx`
+- Use `src/scripts/rename_trade_confirmations.py` to preprocess files if needed
+
+## TRADE CONFIRMATION FILE PREPROCESSING
+
+Trade confirmation files from different sources may have inconsistent naming. Use the preprocessing script to standardize them:
+
+```bash
+# Preview changes (dry-run)
+python src/scripts/rename_trade_confirmations.py
+
+# Execute renaming
+python src/scripts/rename_trade_confirmations.py --execute
+
+# Custom folder
+python src/scripts/rename_trade_confirmations.py --folder /path/to/tc/files --execute
+```
+
+**Expected Excel Format**:
+Trade confirmation files must contain these columns:
+- `Trade Date`: Transaction date
+- `Stock Code`: Symbol (e.g., "9988 HK", "TSLA")
+- `BUY/SELL`: Transaction direction (BUY, SELL, or BUYCOVER)
+- `Quantity`: Number of shares
+- `Avg. Price`: Average execution price
+- `Amount (USD)`: USD amount (cash impact)
+- `Broker`: Broker name
+- `Currency`: Original currency
+- `Market/Exchange` (optional): Market identifier
 
 ## OUTPUT
 
@@ -234,6 +347,32 @@ FundMate uses Futu OpenD API for real-time stock and option prices. You must hav
 - Historical prices limited by Futu API data availability
 
 Report bugs with detailed logs from `./log/DATE/fundmate.log`.
+
+## DATA ARCHIVING TOOL
+
+### Archive Existing Statements
+
+FundMate provides an archiving tool to convert traditional `*_Statement` directory structure to archive mode:
+
+```bash
+# Dry run (preview operations)
+python scripts/archive_statements.py --dry-run
+
+# Execute archiving (copy files to data/archives)
+python scripts/archive_statements.py
+
+# Custom paths
+python scripts/archive_statements.py --data-dir /path/to/data --archive-dir /path/to/archives
+```
+
+**Archiving Tool Features**:
+- Automatically scans all `data/*_Statement/` directories
+- Copies files to `data/archives/{BROKER}/` organized by broker
+- Renames to standard format: `{BROKER}_{YYYY-MM-DD}_{ACCOUNT_ID}.{ext}`
+- Intelligently extracts account IDs (supports all broker formats)
+- Generates detailed archiving report
+
+**Note**: The archiving tool only copies files without deleting originals for safety.
 
 ## FILES
 

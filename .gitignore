@@ -21,3 +21,11 @@ tools/futu/FutuOpenD.xml
 src/script/
 src/__pycache__/
 __pycache__/
+
+
+# DS_Store files
+.DS_Store
+
+.CLAUDE.md
+
+.cursor/

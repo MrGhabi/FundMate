@@ -332,6 +332,8 @@ class DataPersistence:
         ])
         
         # Combine detail rows and summary rows
+        # Filter out None/NaN columns before concat to avoid FutureWarning
+        summary_rows = summary_rows.fillna('')
         csv_with_summary = pd.concat([csv_df, summary_rows], ignore_index=True)
         csv_with_summary.to_csv(csv_file, index=False, encoding='utf-8')
         logger.info(f"💾 CSV report exported: {csv_file}")

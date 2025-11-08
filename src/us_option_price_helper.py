@@ -23,6 +23,7 @@ def parse_us_option_description(description: str) -> Optional[dict]:
         "AMZN US 06/18/26 C300" -> underlying: AMZN, expiry: 2026-06-18, strike: 300, type: CALL
         "COIN 04/18/25 C260" -> underlying: COIN, expiry: 2025-04-18, strike: 260, type: CALL
         "AMZN 18JUN26 300 C" -> underlying: AMZN, expiry: 2026-06-18, strike: 300, type: CALL (IB format)
+        "TRON 20260116 PUT 15.0" -> underlying: TRON, expiry: 2026-01-16, strike: 15.0, type: PUT (Futu format)
     
     Returns:
         dict with: underlying, expiry_date, strike, option_type
@@ -85,6 +86,28 @@ def parse_us_option_description(description: str) -> Optional[dict]:
                 'expiry_date': expiry_date,
                 'strike': float(strike),
                 'option_type': 'CALL' if opt_type == 'C' else 'PUT'
+            }
+        
+        # Try Pattern 3: Futu format - SYMBOL YYYYMMDD PUT/CALL STRIKE
+        pattern3 = r'([A-Z]+)\s+(\d{8})\s+(PUT|CALL)\s+(\d+\.?\d*)'
+        match = re.search(pattern3, upper_desc)
+        
+        if match:
+            symbol, date_str, opt_type, strike = match.groups()
+            
+            # Parse YYYYMMDD
+            year = int(date_str[0:4])
+            month = int(date_str[4:6])
+            day = int(date_str[6:8])
+            
+            # Format date
+            expiry_date = f"{year:04d}-{month:02d}-{day:02d}"
+            
+            return {
+                'underlying': f'US.{symbol}',
+                'expiry_date': expiry_date,
+                'strike': float(strike),
+                'option_type': opt_type
             }
             
     except Exception as e:

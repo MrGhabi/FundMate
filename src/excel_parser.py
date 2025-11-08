@@ -5,6 +5,7 @@ Extracts option position data from MS and GS Excel files.
 Integrates with main FundMate processing pipeline.
 """
 
+import re
 import pandas as pd
 from typing import Dict, List, Optional
 from dataclasses import dataclass
@@ -37,6 +38,15 @@ class ExcelPositionParser:
     
     def __init__(self):
         pass
+    
+    def _match_archive_filename(self, filename: str, broker: str, date: str) -> bool:
+        """
+        检查归档文件名是否匹配券商和日期
+        归档文件名格式: {BROKER}_{YYYY-MM-DD}_{ID}.ext
+        """
+        # 允许大小写不敏感的匹配
+        pattern = rf"{re.escape(broker)}_({re.escape(date)})_.*"
+        return re.match(pattern, filename, re.IGNORECASE) is not None
     
     def parse_ms_file(self, file_path: str) -> List[OptionPosition]:
         """
@@ -263,11 +273,18 @@ class ExcelPositionParser:
             logger.warning(f"Failed to format option symbol: {e}")
             return f"{underlyer} OPTION"
     
-    def parse_directory(self, directory_path: str, target_date: Optional[str] = None) -> Dict[str, List[Dict[str, str]]]:
+    def parse_directory(self, directory_path: str, target_date: Optional[str] = None, archive_mode: bool = False) -> Dict[str, List[Dict[str, str]]]:
         """
         Parse all Excel files in directory structure.
-        Expected structure: directory/BROKER/[DATE/]<files>.xls
-        If target_date is provided (YYYY-MM-DD), only scan that subdirectory when available.
+        
+        Args:
+            directory_path: Path to directory containing Excel files
+            target_date: Target date in YYYY-MM-DD format
+            archive_mode: If True, use archive filename filtering; if False, use directory structure
+        
+        Expected structure:
+            - Archive mode: directory/BROKER/{BROKER}_{YYYY-MM-DD}_*.xls
+            - Statement mode: directory/BROKER/[DATE/]<files>.xls
         
         Returns:
             Dict: {broker_name: [{'StockCode': str, 'Holding': str}, ...]}
@@ -294,28 +311,50 @@ class ExcelPositionParser:
             logger.info(f"Found Excel broker directory: {broker_name}")
             
             broker_positions = []
+            excel_files = []
             
-            # Determine search paths (prefer date-specific folder if provided)
-            search_paths = []
-            if target_date:
-                date_dir = broker_dir / target_date
-                if date_dir.exists():
-                    search_paths.append(date_dir)
+            if archive_mode:
+                # 归档模式：从文件名过滤
+                if not target_date:
+                    logger.error(f"Archive mode requires target_date parameter")
+                    raise ValueError("Archive mode requires target_date parameter")
+                
+                # 查找文件名匹配 {券商}_{日期}_* 的Excel文件
+                all_excel_files = list(broker_dir.glob("*.xls")) + list(broker_dir.glob("*.xlsx")) + \
+                                 list(broker_dir.glob("*.XLS")) + list(broker_dir.glob("*.XLSX"))
+                
+                for excel_file in all_excel_files:
+                    # 文件名格式: {BROKER}_{YYYY-MM-DD}_{ID}.xls
+                    if self._match_archive_filename(excel_file.name, broker_name, target_date):
+                        excel_files.append(excel_file)
+                
+                if not excel_files:
+                    logger.warning(f"No archived Excel files found for {broker_name} on {target_date}")
+                    logger.warning(f"Expected filename pattern: {broker_name}_{target_date}_*.xls[x]")
+                    continue
+            else:
+                # Statement模式：原有逻辑
+                # Determine search paths (prefer date-specific folder if provided)
+                search_paths = []
+                if target_date:
+                    date_dir = broker_dir / target_date
+                    if date_dir.exists():
+                        search_paths.append(date_dir)
 
-            if not search_paths:
-                search_paths.append(broker_dir)
+                if not search_paths:
+                    search_paths.append(broker_dir)
 
-            # Process Excel files in broker directory (including nested folders)
-            excel_files = [
-                file_path
-                for path in search_paths
-                for file_path in path.rglob("*")
-                if file_path.is_file() and file_path.suffix.lower() in ['.xls', '.xlsx']
-            ]
+                # Process Excel files in broker directory (including nested folders)
+                excel_files = [
+                    file_path
+                    for path in search_paths
+                    for file_path in path.rglob("*")
+                    if file_path.is_file() and file_path.suffix.lower() in ['.xls', '.xlsx']
+                ]
 
-            if not excel_files:
-                logger.info(f"No Excel files found for {broker_name}")
-                continue
+                if not excel_files:
+                    logger.info(f"No Excel files found for {broker_name}")
+                    continue
 
             for file_path in excel_files:
                 logger.info(f"Processing Excel file: {file_path}")
