@@ -5,7 +5,7 @@
 ## SYNOPSIS
 
 ```
-python src/main.py BROKER_FOLDER --date DATE [OPTIONS]
+python -m src.main BROKER_FOLDER --date DATE [OPTIONS]
 ```
 
 ## DESCRIPTION
@@ -21,6 +21,14 @@ FundMate is a production-ready financial data processor that extracts cash holdi
 - **Multi-currency**: Automatic currency conversion with recalculated totals (USD, CNY, HKD)
 - **Concurrent processing**: Parallel processing of multiple broker accounts (up to 10 threads)
 - **Data persistence**: Structured output in Parquet and CSV formats
+
+## Installation
+
+1. 建议在仓库根目录执行一次 editable 安装，这样所有命令都可以使用标准 `src.*` 包路径：
+   ```bash
+   pip install -e .
+   ```
+2. 之后运行 CLI/脚本时使用 `python -m src.<module>`（例如 `python -m src.main ...`）；IDE、测试与 web 服务都会自动解析依赖，不再需要手工调整 `PYTHONPATH` 或在代码里写特殊导入逻辑。
 
 ## SUPPORTED BROKERS
 
@@ -137,31 +145,31 @@ data/20250228_Statement/
 **Archive Mode** (Recommended):
 ```bash
 # Process all brokers for a specific date
-python src/main.py data/archives --date 2025-02-28
+python -m src.main data/archives --date 2025-02-28
 
 # Process specific broker only
-python src/main.py data/archives --date 2025-02-28 --broker IB
+python -m src.main data/archives --date 2025-02-28 --broker IB
 
 # Force reprocessing with higher concurrency  
-python src/main.py data/archives --date 2025-02-28 -f --max-workers 8
+python -m src.main data/archives --date 2025-02-28 -f --max-workers 8
 ```
 
 **Statement Mode** (Legacy):
 ```bash
 # Process date-specific directory
-python src/main.py data/20250228_Statement --date 2025-02-28
+python -m src.main data/20250228_Statement --date 2025-02-28
 
 # Process specific broker only
-python src/main.py data/20250228_Statement --date 2025-02-28 --broker IB
+python -m src.main data/20250228_Statement --date 2025-02-28 --broker IB
 ```
 
 ### Advanced Usage
 ```bash
 # Custom output directory
-python src/main.py ./data/statements --date 2025-02-28 --output ./custom/images
+python -m src.main ./data/statements --date 2025-02-28 --output ./custom/images
 
 # Debug single broker with detailed logging
-python src/main.py ./data/statements --date 2025-02-28 --broker HUATAI --max-workers 1
+python -m src.main ./data/statements --date 2025-02-28 --broker HUATAI --max-workers 1
 ```
 
 ### Trade Confirmation Mode
@@ -170,13 +178,13 @@ Use trade confirmation files to update portfolio when broker statements are dela
 
 ```bash
 # Auto-detect base date and update to target date
-python src/main.py data/archives --date 2025-07-22 --use-tc
+python -m src.main data/archives --date 2025-07-22 --use-tc
 
 # Specify base date explicitly
-python src/main.py data/archives --date 2025-07-22 --use-tc --base-date 2025-07-18
+python -m src.main data/archives --date 2025-07-22 --use-tc --base-date 2025-07-18
 
 # Custom trade confirmation folder
-python src/main.py data/archives --date 2025-07-22 --use-tc \
+python -m src.main data/archives --date 2025-07-22 --use-tc \
   --base-date 2025-07-18 \
   --tc-folder /custom/path/to/TradeConfirmation
 ```
