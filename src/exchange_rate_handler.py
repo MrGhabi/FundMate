@@ -11,11 +11,14 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from loguru import logger
 import requests
+import sys
 
-try:
-    from .config import settings
-except (ImportError, ValueError):
-    from config import settings
+if __package__ is None or __package__ == "":
+    project_root = Path(__file__).resolve().parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+from src.config import settings
 
 
 class ExchangeRateHandler:

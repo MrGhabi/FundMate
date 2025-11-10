@@ -9,13 +9,16 @@ from dataclasses import dataclass, field
 from typing import Optional
 from datetime import date
 import logging
+import sys
+from pathlib import Path
 
-try:
-    from .enums import PositionContext, OptionType
-    from .option_parser import parse_option
-except (ImportError, ValueError):
-    from enums import PositionContext, OptionType
-    from option_parser import parse_option
+if __package__ is None or __package__ == "":
+    project_root = Path(__file__).resolve().parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+from src.enums import PositionContext, OptionType
+from src.option_parser import parse_option
 
 logger = logging.getLogger(__name__)
 
@@ -152,4 +155,3 @@ class Position:
             abs(self.strike - other.strike) < 0.01 and
             self.option_type == other.option_type
         )
-

@@ -9,17 +9,18 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Union, TYPE_CHECKING
 from loguru import logger
+import sys
 
-try:
-    from .exchange_rate_handler import exchange_handler
-except (ImportError, ValueError):
-    from exchange_rate_handler import exchange_handler
+if __package__ is None or __package__ == "":
+    project_root = Path(__file__).resolve().parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+from src.exchange_rate_handler import exchange_handler
+from src.config import settings
 
 if TYPE_CHECKING:
-    try:
-        from .broker_processor import ProcessedResult
-    except (ImportError, ValueError):
-        from broker_processor import ProcessedResult
+    from src.broker_processor import ProcessedResult
 
 
 def _identify_hk_option(stock_code: str, raw_description: str = None) -> bool:
@@ -310,10 +311,6 @@ def ensure_output_directories() -> None:
     Ensure all required output directories exist.
     Now uses centralized configuration.
     """
-    try:
-        from .config import settings
-    except (ImportError, ValueError):
-        from config import settings
     settings.ensure_directories()
 
 

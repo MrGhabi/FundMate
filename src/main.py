@@ -8,24 +8,19 @@ import argparse
 from pathlib import Path
 from loguru import logger
 
-try:
-    from .broker_processor import BrokerStatementProcessor
-    from .data_persistence import save_processing_results
-    from .utils import validate_broker_folder, print_processing_info, ensure_output_directories
-    from .config import settings
-    from .trade_confirmation_processor import (
-        TradeConfirmationProcessor, 
-        auto_detect_latest_base_date
-    )
-except (ImportError, ValueError):
-    from broker_processor import BrokerStatementProcessor
-    from data_persistence import save_processing_results
-    from utils import validate_broker_folder, print_processing_info, ensure_output_directories
-    from config import settings
-    from trade_confirmation_processor import (
-        TradeConfirmationProcessor, 
-        auto_detect_latest_base_date
-    )
+if __package__ is None or __package__ == "":
+    project_root = Path(__file__).resolve().parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+from src.broker_processor import BrokerStatementProcessor
+from src.data_persistence import save_processing_results
+from src.utils import validate_broker_folder, print_processing_info, ensure_output_directories
+from src.config import settings
+from src.trade_confirmation_processor import (
+    TradeConfirmationProcessor, 
+    auto_detect_latest_base_date
+)
 
 
 def infer_base_date_from_broker_folder(broker_folder: str, target_date: str) -> str:

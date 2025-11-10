@@ -9,18 +9,16 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import json
 from loguru import logger
+import sys
 
-try:
-    from .broker_processor import ProcessedResult
-    from .config import settings
-except (ImportError, ValueError):
-    from broker_processor import ProcessedResult
-    from config import settings
+if __package__ is None or __package__ == "":
+    project_root = Path(__file__).resolve().parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
 
-try:
-    from .utils import is_money_market_fund, calculate_position_value
-except (ImportError, ValueError):
-    from utils import is_money_market_fund, calculate_position_value
+from src.broker_processor import ProcessedResult
+from src.config import settings
+from src.utils import is_money_market_fund, calculate_position_value
 
 
 class DataPersistence:

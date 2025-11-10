@@ -12,23 +12,20 @@ from pathlib import Path
 from loguru import logger
 import re
 from datetime import datetime
+import sys
 
-try:
-    from .broker_processor import ProcessedResult
-    from .price_fetcher import PriceFetcher, get_stock_price
-    from .data_persistence import DataPersistence
-    from .exchange_rate_handler import exchange_handler
-    from .config import settings
-    from .enums import PositionContext
-    from .position import Position
-except (ImportError, ValueError):
-    from broker_processor import ProcessedResult
-    from price_fetcher import PriceFetcher, get_stock_price
-    from data_persistence import DataPersistence
-    from exchange_rate_handler import exchange_handler
-    from config import settings
-    from enums import PositionContext
-    from position import Position
+if __package__ is None or __package__ == "":
+    project_root = Path(__file__).resolve().parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+from src.broker_processor import ProcessedResult
+from src.price_fetcher import PriceFetcher, get_stock_price
+from src.data_persistence import DataPersistence
+from src.exchange_rate_handler import exchange_handler
+from src.config import settings
+from src.enums import PositionContext
+from src.position import Position
 
 
 @dataclass

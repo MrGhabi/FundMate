@@ -11,11 +11,15 @@ from datetime import date, datetime
 from typing import Optional, List, Union
 import re
 from loguru import logger
+import sys
+from pathlib import Path
 
-try:
-    from .enums import OptionType
-except (ImportError, ValueError):
-    from enums import OptionType
+if __package__ is None or __package__ == "":
+    project_root = Path(__file__).resolve().parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+from src.enums import OptionType
 
 
 @dataclass
@@ -470,4 +474,3 @@ def _init_default_parsers():
 
 # Auto-initialize default parsers on module import
 _init_default_parsers()
-

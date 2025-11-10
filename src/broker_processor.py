@@ -9,24 +9,22 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from loguru import logger
 import re
-try:
-    from .pdf_processor import PDFProcessor
-    from .excel_parser import ExcelPositionParser
-    from .price_fetcher import PriceFetcher, get_stock_price
-    from .utils import setup_logging, validate_date_format, print_asset_summary, get_option_multiplier
-    from .config import settings
-    from .exchange_rate_handler import exchange_handler
-    from .enums import PositionContext
-    from .position import Position
-except (ImportError, ValueError):
-    from pdf_processor import PDFProcessor
-    from excel_parser import ExcelPositionParser
-    from price_fetcher import PriceFetcher, get_stock_price
-    from utils import setup_logging, validate_date_format, print_asset_summary, get_option_multiplier
-    from config import settings
-    from exchange_rate_handler import exchange_handler
-    from enums import PositionContext
-    from position import Position
+import sys
+
+if __package__ is None or __package__ == "":
+    project_root = Path(__file__).resolve().parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+from src.pdf_processor import PDFProcessor
+from src.excel_parser import ExcelPositionParser
+from src.price_fetcher import PriceFetcher, get_stock_price
+from src.utils import setup_logging, validate_date_format, print_asset_summary, get_option_multiplier
+from src.config import settings
+from src.exchange_rate_handler import exchange_handler
+from src.enums import PositionContext
+from src.position import Position
+from src.llm_handler import LLMHandler
 
 
 def extract_occ_code_if_present(stock_code: str) -> str:
@@ -82,10 +80,6 @@ class BrokerStatementProcessor:
     
     def __init__(self):
         """Initialize the processor with PDF, LLM, price fetcher and excel processor instances."""
-        try:
-            from .llm_handler import LLMHandler
-        except (ImportError, ValueError):
-            from llm_handler import LLMHandler
         self.llm_handler = LLMHandler()
         self.pdf_processor = PDFProcessor(self.llm_handler)
         self.excel_parser = ExcelPositionParser()

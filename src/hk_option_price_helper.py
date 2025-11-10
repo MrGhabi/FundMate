@@ -6,12 +6,16 @@ Provides price data for HK options using Futu API
 
 from typing import Optional, Tuple
 from loguru import logger
-
-try:
-    from .config import settings
-except (ImportError, ValueError):
-    from config import settings
 import re
+import sys
+from pathlib import Path
+
+if __package__ is None or __package__ == "":
+    project_root = Path(__file__).resolve().parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+from src.config import settings
 
 
 def parse_hk_option_description(description: str) -> Optional[dict]:

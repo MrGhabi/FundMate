@@ -9,8 +9,13 @@ import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
-
 from loguru import logger
+import sys
+
+if __package__ is None or __package__ == "":
+    project_root = Path(__file__).resolve().parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
 
 try:
     from pypdf import PdfReader, PdfWriter
@@ -18,10 +23,7 @@ except ImportError:
     logger.error("Install pypdf: pip install pypdf")
     raise
 
-try:
-    from .prompt_templates import PROMPT_TEMPLATES
-except (ImportError, ValueError):
-    from prompt_templates import PROMPT_TEMPLATES
+from src.prompt_templates import PROMPT_TEMPLATES
 
 
 # Broker-specific configurations
