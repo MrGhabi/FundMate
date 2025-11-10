@@ -9,12 +9,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from loguru import logger
 import re
-import sys
-
-if __package__ is None or __package__ == "":
-    project_root = Path(__file__).resolve().parent.parent
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
 
 from src.pdf_processor import PDFProcessor
 from src.excel_parser import ExcelPositionParser

@@ -12,12 +12,6 @@ from pathlib import Path
 from loguru import logger
 import re
 from datetime import datetime
-import sys
-
-if __package__ is None or __package__ == "":
-    project_root = Path(__file__).resolve().parent.parent
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
 
 from src.broker_processor import ProcessedResult
 from src.price_fetcher import PriceFetcher, get_stock_price

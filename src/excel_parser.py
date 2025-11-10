@@ -6,17 +6,11 @@ Integrates with main FundMate processing pipeline.
 """
 
 import re
-import sys
 import pandas as pd
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from pathlib import Path
 from loguru import logger
-
-if __package__ is None or __package__ == "":
-    project_root = Path(__file__).resolve().parent.parent
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
 
 from src.enums import PositionContext
 from src.position import Position
