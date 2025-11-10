@@ -278,6 +278,20 @@ Pillow>=9.0.0         # Image processing
 - 4GB+ RAM (for concurrent LLM processing)
 - 2GB+ disk space (for image conversion)
 - Multi-core CPU recommended for `--max-workers > 10`
+
+## TESTING STRATEGY
+
+```
+# Full regression（含 PDF 解析 / Gemini / Futu / TC 等全链路）
+sh test/run_tests.sh
+
+# 单项测试示例
+python -m pytest test/e2e/test_cross_broker.py::TestCrossBrokerAggregation::test_cross_broker_0228 -vv
+```
+
+### TC 回归说明
+- `test/e2e/test_tc_mode.py` 使用 `test/fixtures/tc_base/2025-07-18/` 中缓存的基线快照，通过 `base_results_override` 直接注入 `TradeConfirmationProcessor`，无需重复跑 PDF+LLM 即可验证交易确认逻辑。
+- 若需验证完整链路（PDF→Gemini→TC），依旧运行 `sh test/run_tests.sh` 或你本地的全量回归脚本，它们会真实调用 LLM/Futu 服务刷新基线。
 - Futu OpenD running locally (default: 127.0.0.1:11111)
 
 ## ENVIRONMENT VARIABLES
