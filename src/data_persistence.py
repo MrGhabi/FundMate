@@ -94,25 +94,36 @@ class DataPersistence:
             mmf_cash_adjustments = {}
             
             for position in result.positions:
-                description = position.get('RawDescription', '')
+                # Support both Position objects and dicts
+                if hasattr(position, 'raw_description'):
+                    # Position object
+                    description = position.raw_description or ''
+                    stock_code = position.stock_code
+                    holding = position.holding
+                    price = position.final_price or position.broker_price or 0
+                    currency = position.price_currency or 'USD'
+                else:
+                    # Dict format (legacy)
+                    description = position.get('RawDescription', '')
+                    stock_code = position.get('StockCode', '')
+                    holding = position.get('Holding', 0)
+                    price = position.get('Price', 0)
+                    currency = position.get('PriceCurrency', 'USD')
                 
                 # Check if this is a MMF
                 if is_money_market_fund(description):
                     # Calculate value
-                    holding = position.get('Holding', 0)
                     if isinstance(holding, str):
                         holding = float(holding.replace(',', ''))
                     else:
                         holding = float(holding)
                     
-                    price = position.get('Price', 0)
                     if isinstance(price, str):
                         price = float(price.replace(',', ''))
                     else:
                         price = float(price)
                     
                     value = holding * price
-                    currency = position.get('PriceCurrency', 'USD')
                     
                     # Accumulate cash adjustment
                     if currency not in mmf_cash_adjustments:
@@ -120,7 +131,7 @@ class DataPersistence:
                     mmf_cash_adjustments[currency] += value
                     
                     logger.info(
-                        f"💰 Reclassified MMF to cash: {position.get('StockCode')} "
+                        f"💰 Reclassified MMF to cash: {stock_code} "
                         f"- {description} = {currency} {value:,.2f}"
                     )
                 else:
@@ -176,7 +187,7 @@ class DataPersistence:
             # Extract positions data
             for position in result.positions:
                 # Convert holding to integer, handle string values with commas
-                holding_value = position['Holding']
+                holding_value = position.holding
                 if isinstance(holding_value, str):
                     # Remove commas and convert to int
                     holding_value = int(holding_value.replace(',', ''))
@@ -185,18 +196,18 @@ class DataPersistence:
                 
                 # Calculate USD value using the same logic as print_asset_summary
                 position_value_usd = None
-                if position.get('FinalPrice'):
+                if position.final_price:
                     try:
                         position_value, _ = calculate_position_value(
-                            price=position['FinalPrice'],
+                            price=position.final_price,
                             holding=holding_value,
-                            stock_code=position['StockCode'],
-                            raw_description=position.get('RawDescription'),
-                            broker_multiplier=position.get('Multiplier')
+                            stock_code=position.stock_code,
+                            raw_description=position.raw_description,
+                            broker_multiplier=position.multiplier
                         )
                         
                         # Convert to USD if needed
-                        price_currency = position.get('OptimizedPriceCurrency', 'USD')
+                        price_currency = position.optimized_price_currency or 'USD'
                         if price_currency != 'USD' and position_value != 0:
                             rate = exchange_rates.get(price_currency, 1.0)
                             position_value_usd = position_value * rate
@@ -204,7 +215,7 @@ class DataPersistence:
                             position_value_usd = position_value
                             
                     except Exception as e:
-                        logger.warning(f"Failed to calculate value for {position['StockCode']}: {e}")
+                        logger.warning(f"Failed to calculate value for {position.stock_code}: {e}")
                 
                 position_row = {
                     # Basic info
@@ -213,19 +224,19 @@ class DataPersistence:
                     'account_id': result.account_id,
                     
                     # Position info
-                    'stock_code': position['StockCode'],
-                    'raw_description': position.get('RawDescription', ''),
+                    'stock_code': position.stock_code,
+                    'raw_description': position.raw_description or '',
                     'holding': holding_value,
                     
                     # Price info
-                    'broker_price': position.get('BrokerPrice'),
-                    'broker_price_currency': position.get('PriceCurrency'),
-                    'final_price': position.get('FinalPrice'),
-                    'final_price_source': position.get('FinalPriceSource'),
-                    'optimized_price_currency': position.get('OptimizedPriceCurrency'),
+                    'broker_price': position.broker_price,
+                    'broker_price_currency': position.price_currency,
+                    'final_price': position.final_price,
+                    'final_price_source': position.final_price_source,
+                    'optimized_price_currency': position.optimized_price_currency,
                     
                     # Option info
-                    'multiplier': position.get('Multiplier', 1),
+                    'multiplier': position.multiplier or 1,
                     
                     # Calculated value
                     'position_value_usd': position_value_usd,

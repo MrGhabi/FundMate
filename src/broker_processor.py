@@ -16,6 +16,8 @@ try:
     from .utils import setup_logging, validate_date_format, print_asset_summary, get_option_multiplier
     from .config import settings
     from .exchange_rate_handler import exchange_handler
+    from .enums import PositionContext
+    from .position import Position
 except (ImportError, ValueError):
     from pdf_processor import PDFProcessor
     from excel_parser import ExcelPositionParser
@@ -23,6 +25,8 @@ except (ImportError, ValueError):
     from utils import setup_logging, validate_date_format, print_asset_summary, get_option_multiplier
     from config import settings
     from exchange_rate_handler import exchange_handler
+    from enums import PositionContext
+    from position import Position
 
 
 def extract_occ_code_if_present(stock_code: str) -> str:
@@ -60,7 +64,7 @@ class ProcessedResult:
     broker_name: str
     account_id: str
     cash_data: Dict[str, Union[float, str, None]]
-    positions: List[Dict[str, Union[str, int, float, None]]]
+    positions: List[Position]  # Changed from List[Dict] to List[Position]
     usd_total: float = 0.0
     position_values: Dict[str, Any] = None
     total_position_value_usd: float = 0.0
@@ -277,7 +281,7 @@ class BrokerStatementProcessor:
         
         for broker_result in results:
             for i, position in enumerate(broker_result.positions):
-                stock_code = position['StockCode']
+                stock_code = position.stock_code
                 if stock_code not in unique_symbols:
                     unique_symbols[stock_code] = []
                 unique_symbols[stock_code].append((broker_result, i))
@@ -293,7 +297,7 @@ class BrokerStatementProcessor:
                 logger.debug(f"Querying price for {symbol}...")
                 # Get raw_description from first position with this symbol for better option parsing
                 first_position = unique_symbols[symbol][0][0].positions[unique_symbols[symbol][0][1]]
-                raw_description = first_position.get('RawDescription')
+                raw_description = first_position.raw_description
                 
                 # get_stock_price now returns (price, currency) tuple
                 price, api_currency = get_stock_price(symbol, date, settings.PRICE_SOURCE, raw_description)
@@ -319,9 +323,10 @@ class BrokerStatementProcessor:
         for symbol, price_data in optimized_prices.items():
             for broker_result, position_index in unique_symbols[symbol]:
                 # Update the position with optimized price data
-                broker_result.positions[position_index]['OptimizedPrice'] = price_data['price']
-                broker_result.positions[position_index]['OptimizedPriceSource'] = price_data['source']
-                broker_result.positions[position_index]['OptimizedPriceCurrency'] = price_data['currency']
+                position = broker_result.positions[position_index]
+                position.final_price = price_data['price']
+                position.final_price_source = price_data['source']
+                position.optimized_price_currency = price_data['currency']
         
         # Step 4: Recalculate position values for each broker using optimized prices
         for broker_result in results:
@@ -332,26 +337,23 @@ class BrokerStatementProcessor:
             successful_prices = 0
             
             for position in broker_result.positions:
-                holding = position['Holding']
+                holding = position.holding
                 # Ensure holding is numeric
                 try:
                     holding_num = int(holding) if isinstance(holding, (int, float)) else int(float(str(holding).replace(',', '')))
                 except (ValueError, TypeError):
                     holding_num = 0
                 
-                optimized_price = position.get('OptimizedPrice')
-                broker_price = position.get('BrokerPrice')
-                
-                # Priority: OptimizedPrice > BrokerPrice
-                final_price = optimized_price or broker_price
-                price_source = position.get('OptimizedPriceSource', 'Broker') if optimized_price else 'Broker'
-                price_currency = position.get('OptimizedPriceCurrency') if optimized_price else position.get('PriceCurrency')
+                # Priority: final_price (from optimization) > broker_price
+                final_price = position.final_price or position.broker_price
+                price_source = position.final_price_source if position.final_price else 'Broker'
+                price_currency = position.optimized_price_currency if position.final_price else position.price_currency
                 
                 if final_price is not None:
                     # Apply correct multiplier based on instrument type
-                    stock_code = position['StockCode']
-                    raw_description = position.get('RawDescription')
-                    broker_multiplier = position.get('Multiplier')
+                    stock_code = position.stock_code
+                    raw_description = position.raw_description
+                    broker_multiplier = position.multiplier
                     
                     multiplier = get_option_multiplier(stock_code, raw_description, broker_multiplier)
                     position_value = final_price * holding_num * multiplier
@@ -365,10 +367,11 @@ class BrokerStatementProcessor:
                     successful_prices += 1
                     
                     # Update position with final calculation results
-                    position['FinalPrice'] = final_price
-                    position['FinalPriceSource'] = price_source
-                    position['OptimizedPriceCurrency'] = price_currency
-                    position['PositionValueUSD'] = position_value
+                    position.final_price = final_price
+                    position.final_price_source = price_source
+                    position.optimized_price_currency = price_currency
+                    # Note: PositionValueUSD is not stored in Position object,
+                    # only used for aggregated calculation
             
             # Update broker result with recalculated values
             broker_result.total_position_value_usd = total_position_value
@@ -534,6 +537,25 @@ class BrokerStatementProcessor:
         
         logger.info(f"🎉 Concurrent PDF processing completed: {len(results)}/{len(pdf_tasks)} successful")
         return results
+
+    @staticmethod
+    def _normalize_holding_value(value: Union[str, int, float, None]) -> float:
+        """
+        Normalize broker-provided holding quantity into a float.
+        
+        PDF outputs sometimes contain comma-separated strings; downstream logic expects numbers.
+        """
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value.replace(',', ''))
+            except ValueError:
+                logger.warning(f"Unexpected holding format '{value}', defaulting to 0")
+                return 0.0
+        return 0.0
     
     def _process_single_pdf_task(self, task: Dict[str, Any]) -> Optional[ProcessedResult]:
         """
@@ -565,27 +587,35 @@ class BrokerStatementProcessor:
             # Calculate USD total from cash data
             usd_total = self._calculate_usd_total(data.get('Cash', {}), exchange_rates)
             
-            # Convert PDF position format to expected format
-            positions = data.get('Positions', [])
-            for position in positions:
-                # Convert 'Price' field to 'BrokerPrice' for compatibility
-                if 'Price' in position and 'BrokerPrice' not in position:
-                    position['BrokerPrice'] = position['Price']
-                
-                # Map 'Description' to 'RawDescription' for MMF detection
-                if 'Description' in position and 'RawDescription' not in position:
-                    position['RawDescription'] = position['Description']
-                
-                # Extract OCC code if present in mixed format (e.g., "SBET 260116 41.00P SBET260116P41000")
-                stock_code = position.get('StockCode', '')
+            # Convert PDF position format to Position objects
+            position_dicts = data.get('Positions', [])
+            position_list = []
+            for pos_dict in position_dicts:
+                # Extract OCC code if present in mixed format
+                stock_code = pos_dict.get('StockCode', '')
                 if stock_code and ' ' in stock_code and re.search(r'\d{6}[CP]\d{5}', stock_code):
-                    position['StockCode'] = extract_occ_code_if_present(stock_code)
+                    stock_code = extract_occ_code_if_present(stock_code)
+
+                holding_value = self._normalize_holding_value(pos_dict.get('Holding', 0))
+                
+                # Create Position object
+                pos = Position(
+                    stock_code=stock_code,
+                    holding=holding_value,
+                    broker_price=pos_dict.get('Price'),
+                    raw_description=pos_dict.get('Description'),
+                    price_currency=pos_dict.get('PriceCurrency'),
+                    multiplier=pos_dict.get('Multiplier'),
+                    broker=broker_name,
+                    context=PositionContext.BASE
+                )
+                position_list.append(pos)
             
             processed_result = ProcessedResult(
                 broker_name=broker_name,
                 account_id=pdf_result['account_id'],
                 cash_data=data.get('Cash', {}),
-                positions=positions,
+                positions=position_list,
                 usd_total=usd_total
             )
             

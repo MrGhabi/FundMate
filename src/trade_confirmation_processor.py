@@ -16,21 +16,19 @@ from datetime import datetime
 try:
     from .broker_processor import ProcessedResult
     from .price_fetcher import PriceFetcher, get_stock_price
-    from .data_persistence import DataPersistence, save_processing_results
+    from .data_persistence import DataPersistence
     from .exchange_rate_handler import exchange_handler
-    from .utils import calculate_position_value, get_option_multiplier
-    from .hk_option_price_helper import parse_hk_option_description
-    from .us_option_price_helper import parse_us_option_description
     from .config import settings
+    from .enums import PositionContext
+    from .position import Position
 except (ImportError, ValueError):
     from broker_processor import ProcessedResult
     from price_fetcher import PriceFetcher, get_stock_price
-    from data_persistence import DataPersistence, save_processing_results
+    from data_persistence import DataPersistence
     from exchange_rate_handler import exchange_handler
-    from utils import calculate_position_value, get_option_multiplier
-    from hk_option_price_helper import parse_hk_option_description
-    from us_option_price_helper import parse_us_option_description
     from config import settings
+    from enums import PositionContext
+    from position import Position
 
 
 @dataclass
@@ -64,6 +62,30 @@ class TradeConfirmationProcessor:
         self.persistence = DataPersistence()
         self.price_failures = []  # Track failed price fetches
         self._hk_code_cache: Dict[str, str] = {}
+        self._option_parser_configured = False
+    
+    def _setup_option_parser(self):
+        """
+        Configure global option parser to resolve HK numeric codes via Futu.
+        
+        HKNumericParser requires a resolve function dependency; inject it once.
+        """
+        if self._option_parser_configured:
+            return
+        
+        try:
+            from .option_parser import register_parser, HKNumericParser
+        except ImportError:
+            try:
+                from option_parser import register_parser, HKNumericParser
+            except ImportError:
+                logger.warning("Could not import option_parser, HK numeric resolution unavailable")
+                return
+        
+        hk_parser = HKNumericParser(resolve_func=self.resolve_hk_numeric_to_hkats)
+        register_parser(hk_parser)
+        logger.info("Configured HKNumericParser with Futu API resolution")
+        self._option_parser_configured = True
     
     def resolve_hk_numeric_to_hkats(self, numeric_code: str) -> str:
         """
@@ -149,73 +171,6 @@ class TradeConfirmationProcessor:
 
         return hkats_code
 
-    def standardize_option_format(self, stock_code: str) -> str:
-        """
-        Standardize TC option format to OCC
-        
-        Handles:
-          1. "TICKER US MM/DD/YY C/P STRIKE" (US format)
-          2. "TICKER HK MM/DD/YY C/P STRIKE" (HK format)
-        
-        Examples:
-          - "SBET US 01/16/26 P41" → "SBET260116P41000"
-          - "2628 HK 06/29/26 C20" → "2628260629C20000"
-        
-        Args:
-            stock_code: Stock code from TC file
-            
-        Returns:
-            Standardized code (OCC format for options)
-            
-        Raises:
-            ValueError: If option format is unrecognized
-        """
-        if not stock_code:
-            return stock_code
-        
-        # Remove trailing " Equity" or " Option"
-        stock_code = re.sub(r'\s+(Equity|Option)$', '', stock_code, flags=re.IGNORECASE).strip()
-        
-        # Check 1: Already OCC format? (TICKER + 6 digits + C/P + 5 digits)
-        if re.match(r'^[A-Z0-9]+\d{6}[CP]\d{5}$', stock_code):
-            return stock_code
-        
-        # Check 2: TC format? "[PREFIX] TICKER MARKET MM/DD/YY C/P STRIKE"
-        # MARKET can be: US, HK, SS, C1, etc. (2 alphanumeric chars)
-        # PREFIX is optional (e.g., "GS" in "GS 3690 HK 05/28/27 C180")
-        match = re.search(
-            r'^(?:[A-Z]{2}\s+)?([A-Z0-9]+)\s+([A-Z0-9]{2})\s+(\d{2})/(\d{2})/(\d{2})\s+([CP])(\d+)$',
-            stock_code
-        )
-        
-        if match:
-            ticker, market, mm, dd, yy, cp, strike = match.groups()
-            market_upper = market.upper()
-
-            # Convert HK numeric code to HKATS letter code via Futu API
-            if ticker.isdigit() and market_upper in ('HK', 'C1'):
-                ticker = self.resolve_hk_numeric_to_hkats(ticker)
-
-            occ_code = f"{ticker}{yy}{mm}{dd}{cp}{int(strike)*1000:05d}"
-            logger.info(f"TC option standardized ({market}): '{stock_code}' → '{occ_code}'")
-            return occ_code
-        
-        # Check 3: No date pattern? Not an option, likely a stock
-        # Options must have date pattern MM/DD/YY
-        if not re.search(r'\d{2}/\d{2}/\d{2}', stock_code):
-            # No date pattern - likely a stock ticker like "1263 HK", "AAPL", etc.
-            return stock_code
-        
-        # Unknown option format - FAIL FAST
-        # (has date pattern but doesn't match known formats)
-        raise ValueError(
-            f"Unrecognized option format in TC file: '{stock_code}'\n"
-            f"Expected formats:\n"
-            f"  - '[PREFIX] TICKER MARKET MM/DD/YY C/P STRIKE'\n"
-            f"    Examples: 'SBET US 01/16/26 P41', '2628 HK 06/29/26 C20', 'GS 3690 HK 05/28/27 C180'\n"
-            f"  - OCC: 'TICKER + 6digits + C/P + 5digits' (e.g., 'SBET260116P41000')\n"
-            f"Please check TC file and standardize the format."
-        )
     
     def process_with_trade_confirmation(
         self,
@@ -236,6 +191,9 @@ class TradeConfirmationProcessor:
         Returns:
             (results, exchange_rates, date) - Same format as normal mode
         """
+        # Ensure option parser can resolve HK numeric codes before processing
+        self._setup_option_parser()
+        
         logger.info("=" * 80)
         logger.info("PHASE 1: Processing Base Portfolio")
         logger.info("=" * 80)
@@ -464,10 +422,7 @@ class TradeConfirmationProcessor:
                         # Pure stock, remove ' US' suffix
                         stock_code = stock_code[:-3].strip()
                 
-                stock_code = stock_code.strip()
-                
-                # Standardize option format to OCC (e.g., "SBET US 01/16/26 P41" → "SBET260116P41000")
-                stock_code = self.standardize_option_format(stock_code)
+                stock_code = self._remove_leading_prefix(stock_code.strip())
                 
                 # Normalize Amount to absolute value for consistent processing
                 # TC files may have signed (US) or unsigned (Asia) amounts
@@ -496,6 +451,23 @@ class TradeConfirmationProcessor:
                 f"Error: {type(e).__name__}: {e}\n"
                 f"Please check the file format and content."
             ) from e
+    
+    @staticmethod
+    def _remove_leading_prefix(stock_code: str) -> str:
+        """
+        Some brokers prepend routing codes (e.g., "GS 2628 HK ...").
+        Strip the first token if it is pure letters and followed by a numeric HK/US pattern.
+        """
+        if not stock_code:
+            return stock_code
+        tokens = stock_code.split()
+        if len(tokens) < 4:
+            return stock_code
+        first, second, third = tokens[0], tokens[1], tokens[2]
+        if first.isalpha() and len(first) <= 4 and second.isdigit() and len(second) == 4:
+            if third.upper() in {'HK', 'C1', 'US'}:
+                return ' '.join(tokens[1:])
+        return stock_code
     
     def _apply_transactions(
         self, 
@@ -571,118 +543,65 @@ class TradeConfirmationProcessor:
     def _apply_buy(self, result: ProcessedResult, txn: Transaction):
         """
         Apply a BUY transaction: increase position, decrease cash.
-        
-        Args:
-            result: ProcessedResult to update
-            txn: Buy transaction
         """
-        # Find or create position
-        position = self._find_position(result.positions, txn.stock_code)
+        position = self._find_position(result.positions, txn.stock_code, result.broker_name)
         
         if position:
-            # Update existing position
-            position['Holding'] += txn.quantity
+            current_holding = self._normalize_holding(position.holding)
+            position.holding = current_holding + txn.quantity
         else:
-            # Create new position
-            # Calculate multiplier automatically (same logic as base mode)
-            multiplier = get_option_multiplier(
+            new_position = Position(
                 stock_code=txn.stock_code,
+                holding=txn.quantity,
+                broker_price=txn.avg_price,
+                price_currency=txn.currency,
                 raw_description=txn.stock_code,
-                broker_multiplier=None
+                broker=result.broker_name,
+                context=PositionContext.TC
             )
-            new_position = {
-                'StockCode': txn.stock_code,
-                'RawDescription': txn.stock_code,  # Will be updated with price fetch
-                'Holding': txn.quantity,
-                'BrokerPrice': txn.avg_price,
-                'PriceCurrency': txn.currency,
-                'FinalPrice': None,  # Will be updated later
-                'FinalPriceSource': '',
-                'OptimizedPriceCurrency': 'USD',
-                'Multiplier': multiplier
-            }
             result.positions.append(new_position)
-            logger.debug(f"  Created new position with multiplier={multiplier} for {txn.stock_code}")
+            logger.debug(
+                f"  Created new position with multiplier={new_position.multiplier} "
+                f"for {txn.stock_code}"
+            )
         
-        # Decrease cash (USD)
         current_usd = result.cash_data.get('USD', 0) or 0
         result.cash_data['USD'] = current_usd - txn.amount_usd
         result.usd_total = result.usd_total - txn.amount_usd
-        
         logger.debug(f"  BUY {txn.quantity} {txn.stock_code} @ ${txn.avg_price}")
     
     def _apply_sell(self, result: ProcessedResult, txn: Transaction):
         """
         Apply a SELL transaction: decrease position OR create short position, increase cash.
-        
-        Handles two scenarios:
-        1. Sell to Close: Selling existing long position (quantity > 0)
-        2. Sell to Open: Creating new short position (quantity < 0, "Sell Short")
-        
-        Args:
-            result: ProcessedResult to update
-            txn: Sell transaction
         """
-        # Find position
-        position = self._find_position(result.positions, txn.stock_code)
-        
-        # Check if this is a short sale (negative quantity)
+        position = self._find_position(result.positions, txn.stock_code, result.broker_name)
         is_short_sale = txn.quantity < 0
         
         if is_short_sale:
-            # Sell Short: Create or increase short position
             abs_quantity = abs(txn.quantity)
             
             if position:
-                # Add to existing short position (make it more negative)
-                position['Holding'] -= abs_quantity
+                current_holding = self._normalize_holding(position.holding)
+                position.holding = current_holding - abs_quantity
             else:
-                # Create new short position
-                # Calculate multiplier automatically (same logic as base mode)
-                multiplier = get_option_multiplier(
+                new_position = Position(
                     stock_code=txn.stock_code,
+                    holding=-abs_quantity,
+                    broker_price=txn.avg_price,
+                    price_currency=txn.currency,
                     raw_description=txn.stock_code,
-                    broker_multiplier=None
+                    broker=result.broker_name,
+                    context=PositionContext.TC
                 )
-                new_position = {
-                    'StockCode': txn.stock_code,
-                    'RawDescription': txn.stock_code,
-                    'Holding': -abs_quantity,  # Negative for short
-                    'BrokerPrice': txn.avg_price,
-                    'PriceCurrency': txn.currency,
-                    'FinalPrice': None,
-                    'FinalPriceSource': '',
-                    'OptimizedPriceCurrency': 'USD',
-                    'Multiplier': multiplier
-                }
                 result.positions.append(new_position)
-                logger.debug(f"  Created new short position with multiplier={multiplier} for {txn.stock_code}")
+                logger.debug(
+                    f"  Created new short position with multiplier={new_position.multiplier} "
+                    f"for {txn.stock_code}"
+                )
             
             logger.debug(f"  SELL SHORT {abs_quantity} {txn.stock_code} @ ${txn.avg_price}")
         else:
-            # Normal sell: Close long position
-            if position:
-                # Update quantity
-                position['Holding'] -= txn.quantity
-                
-                # Check for oversold (shouldn't happen in normal case)
-                if position['Holding'] < 0:
-                    raise ValueError(
-                        f"SELL quantity exceeds current holding!\n"
-                        f"Broker: {result.broker_name}\n"
-                        f"Stock: {txn.stock_code}\n"
-                        f"Current holding: {position['Holding'] + txn.quantity}\n"
-                        f"SELL quantity: {txn.quantity}\n"
-                        f"Resulting holding: {position['Holding']} (NEGATIVE!)\n"
-                        f"This is not a 'Sell Short' (quantity should be negative for shorts).\n"
-                        f"Please check the transaction data or base date."
-                    )
-                
-                # Remove position if fully sold
-                if position['Holding'] == 0:
-                    result.positions.remove(position)
-                    logger.debug(f"  Position {txn.stock_code} fully closed")
-            else:
+            if not position:
                 raise ValueError(
                     f"SELL transaction for non-existent position!\n"
                     f"Broker: {result.broker_name}\n"
@@ -696,290 +615,109 @@ class TradeConfirmationProcessor:
                     f"  3. Wrong broker name in TC file\n"
                     f"  4. This is a 'Sell Short' but quantity is not negative\n"
                     f"\nCurrent positions in {result.broker_name}:\n"
-                    f"  {[p['StockCode'] for p in result.positions]}\n"
+                    f"  {[p.stock_code for p in result.positions]}\n"
                     f"\nNote: For short sales, quantity should be negative (e.g., -500)"
                 )
+            
+            current_holding = self._normalize_holding(position.holding)
+            new_holding = current_holding - txn.quantity
+            if new_holding < 0:
+                raise ValueError(
+                    f"SELL quantity exceeds current holding!\n"
+                    f"Broker: {result.broker_name}\n"
+                    f"Stock: {txn.stock_code}\n"
+                    f"Current holding: {current_holding}\n"
+                    f"SELL quantity: {txn.quantity}\n"
+                    f"Resulting holding: {new_holding} (NEGATIVE!)\n"
+                    f"This is not a 'Sell Short' (quantity should be negative for shorts).\n"
+                    f"Please check the transaction data or base date."
+                )
+            
+            position.holding = new_holding
+            if abs(new_holding) < 1e-9:
+                result.positions.remove(position)
+                logger.debug(f"  Position {txn.stock_code} fully closed")
         
-        # Increase cash (USD)
         current_usd = result.cash_data.get('USD', 0) or 0
         result.cash_data['USD'] = current_usd + txn.amount_usd
         result.usd_total = result.usd_total + txn.amount_usd
-        
         logger.debug(f"  SELL {txn.quantity} {txn.stock_code} @ ${txn.avg_price}")
     
     def _find_position(
-        self, 
-        positions: List[Dict], 
-        stock_code: str
-    ) -> Optional[Dict]:
+        self,
+        positions: List,
+        stock_code: str,
+        broker_name: str = "TEMP"
+    ) -> Optional[Position]:
         """
-        Find position by stock code.
-        
-        For options, supports fuzzy matching since formats may differ:
-        - Base portfolio: "CLI 250929 20.00 CALL" (in RawDescription)
-        - TC file:        "2628 HK 06/29/26 C20"
-        
-        Uses existing parse_hk_option_description() and parse_us_option_description()
+        Find matching position for a TC stock code.
+
+        Leverages Position.matches_option for fuzzy matching so that different
+        option representations (HK numeric vs HKATS vs OCC) still pair up.
         """
-        # First try exact match on StockCode
-        for pos in positions:
-            if pos['StockCode'] == stock_code:
-                return pos
+        target = Position(
+            stock_code=stock_code,
+            holding=0,
+            broker=broker_name,
+            context=PositionContext.TC
+        )
         
-        # Try fuzzy matching for options using existing parsers
-        # Parse TC file format
-        parsed_tc = self._parse_option_with_existing_logic(stock_code)
-        if parsed_tc:
+        for idx, pos in enumerate(positions):
+            pos_obj = self._ensure_position_object(pos, broker_name)
+            positions[idx] = pos_obj
+            if pos_obj.stock_code == stock_code:
+                return pos_obj
+        
+        if target.option_format:
             for pos in positions:
-                # Try both StockCode and RawDescription for matching
-                # RawDescription often contains the original broker format
-                for code_field in ['StockCode', 'RawDescription']:
-                    code_value = pos.get(code_field, '')
-                    if not code_value:
-                        continue
-                    
-                    parsed_pos = self._parse_option_with_existing_logic(code_value)
-                    if parsed_pos and self._options_match(parsed_tc, parsed_pos):
-                        logger.debug(
-                            f"Fuzzy matched option: '{stock_code}' → '{pos['StockCode']}' "
-                            f"(via {code_field}: '{code_value}')"
-                        )
-                        return pos
+                if pos.option_format and target.matches_option(pos):
+                    logger.debug(
+                        f"Fuzzy matched option: '{stock_code}' → '{pos.stock_code}' "
+                        f"({target.underlying} {target.strike} {target.option_type})"
+                    )
+                    return pos
         
         return None
     
-    def _parse_option_with_existing_logic(self, code: str) -> Optional[Dict]:
-        """
-        Parse option code using existing HK/US option parsers.
-        
-        Supports multiple option formats:
-        - OCC format: "CLI260629C20000" (standardized format)
-        - HKATS format: "CLI 250929 20.00 CALL"
-        - Stock code + TC format: "2318 HK 09/29/25 C55"
-        - Stock code + Base format: "2318 29SEP25 55 C"
-        
-        Reuses:
-        - parse_hk_option_description() for HK HKATS format
-        - parse_us_option_description() for US options
-        
-        Returns normalized dict with: expiry_date, strike, option_type, hkats_code/underlying
-        """
-        # Try OCC format FIRST (most likely after standardization)
-        occ_parsed = self._parse_occ_format(code)
-        if occ_parsed:
-            return occ_parsed
-        
-        # Try HK stock code formats (before US parser to avoid false matches)
-        # Format 1: TC file format "2318 HK 09/29/25 C55"
-        # Format 2: Base portfolio format "2318 29SEP25 55 C"
-        hk_stock_format = self._parse_hk_stock_code_option(code)
-        if hk_stock_format:
-            return hk_stock_format
-        
-        # Try HK option parser (HKATS format)
-        hk_parsed = parse_hk_option_description(code)
-        if hk_parsed:
-            return hk_parsed
-        
-        # Try US option parser (last to avoid false matches)
-        us_parsed = parse_us_option_description(code)
-        if us_parsed:
-            return us_parsed
-        
-        return None
-    
-    def _parse_occ_format(self, code: str) -> Optional[Dict]:
-        """
-        Parse OCC format option code: TICKER + 6digits + C/P + 5digits
-        
-        Examples:
-        - "CLI260629C20000" → CLI, 2026-06-29, CALL, 20.0
-        - "SBET260116P41000" → SBET, 2026-01-16, PUT, 41.0
-        
-        Returns same format as parse_hk_option_description()
-        """
-        import re
-        from datetime import datetime
-        
-        # OCC format: TICKER(letters) + YYMMDD(6digits) + C/P + STRIKE*1000(5digits)
-        match = re.match(r'^([A-Z]+)(\d{6})([CP])(\d{5})$', code)
-        if not match:
-            return None
-        
-        ticker, date_str, opt_type, strike_str = match.groups()
-        
-        # Parse date: YYMMDD
-        yy, mm, dd = date_str[:2], date_str[2:4], date_str[4:6]
-        year = 2000 + int(yy)
-        
-        try:
-            expiry_date = datetime(year, int(mm), int(dd))
-        except ValueError:
-            return None
-        
-        expiry_str = expiry_date.strftime('%Y-%m-%d')
-        strike_float = int(strike_str) / 1000.0  # Convert back from *1000
-        option_type_full = 'CALL' if opt_type == 'C' else 'PUT'
-        
-        logger.debug(f"Parsed OCC format: {code} → {ticker} {expiry_str} {strike_float} {option_type_full}")
-        
-        return {
-            'hkats_code': ticker,  # Assume ticker is HKATS code for HK options
-            'expiry_date': expiry_str,
-            'strike': strike_float,
-            'option_type': option_type_full
-        }
-    
-    def _parse_hk_stock_code_option(self, code: str) -> Optional[Dict]:
-        """
-        Parse HK option in stock code formats and resolve HKATS code via Futu API.
-        - TC file format: "2318 HK 09/29/25 C55"  -> Query Futu to get CLI
-        - IB PDF format: "2318 29SEP25 55 C"      -> Query Futu to get CLI
-        
-        Uses Futu API to ensure accurate stock_code -> HKATS code mapping.
-        
-        Returns same format as parse_hk_option_description()
-        """
-        import re
-        from datetime import datetime
-        
-        # Pattern 1: TC format - {stock_code} HK {MM}/{DD}/{YY} {C/P}{strike}
-        match = re.match(r'(\d{4})\s+HK\s+(\d{2})/(\d{2})/(\d{2})\s+([CP])(\d+(?:\.\d+)?)', code)
-        if match:
-            stock_code, mm, dd, yy, opt_type, strike = match.groups()
-            
-            year = 2000 + int(yy)
+    @staticmethod
+    def _normalize_holding(value):
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
             try:
-                expiry_date = datetime(year, int(mm), int(dd))
+                return float(value.replace(',', ''))
             except ValueError:
-                # Try DD/MM instead of MM/DD
-                try:
-                    expiry_date = datetime(year, int(dd), int(mm))
-                except ValueError:
-                    return None
-            
-            expiry_str = expiry_date.strftime('%Y-%m-%d')
-            strike_float = float(strike)
-            option_type_full = 'CALL' if opt_type == 'C' else 'PUT'
-            
-            # Query Futu API to get HKATS code (with cache)
-            try:
-                hkats_code = self.resolve_hk_numeric_to_hkats(stock_code)
-                
-                # Check if resolution failed (returns original numeric code)
-                # Success: hkats_code is alphabetic (e.g., 'CLI')
-                # Failure: hkats_code is numeric (e.g., '2318')
-                if hkats_code.isdigit():
-                    logger.debug(f"Cannot resolve HKATS code for {code} via Futu API (no option chain)")
-                    return None
-            except (ValueError, RuntimeError) as e:
-                logger.debug(f"Cannot resolve HKATS code for {code}: {e}")
-                return None
-            
-            logger.debug(f"Resolved via Futu: {code} -> {hkats_code} {expiry_str} {strike_float} {option_type_full}")
-            
-            return {
-                'hkats_code': hkats_code,
-                'expiry_date': expiry_str,
-                'strike': strike_float,
-                'option_type': option_type_full
-            }
-        
-        # Pattern 2: IB PDF format - {stock_code} {DD}{MMM}{YY} {strike} {C/P}
-        match = re.match(r'(\d{4})\s+(\d{2})([A-Z]{3})(\d{2})\s+(\d+(?:\.\d+)?)\s+([CP])', code)
-        if match:
-            stock_code, day, month_str, year, strike, opt_type = match.groups()
-            
-            # Month mapping
-            month_map = {
-                'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
-                'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
-                'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
-            }
-            
-            month = month_map.get(month_str)
-            if not month:
-                return None
-            
-            year_int = int(year)
-            full_year = 2000 + year_int if year_int < 50 else 1900 + year_int
-            
-            expiry_str = f"{full_year}-{month}-{day}"
-            strike_float = float(strike)
-            option_type_full = 'CALL' if opt_type == 'C' else 'PUT'
-            
-            # Query Futu API to get HKATS code (with cache)
-            try:
-                hkats_code = self.resolve_hk_numeric_to_hkats(stock_code)
-                
-                # Check if resolution failed (returns original numeric code)
-                if hkats_code.isdigit():
-                    logger.debug(f"Cannot resolve HKATS code for {code} via Futu API (no option chain)")
-                    return None
-            except (ValueError, RuntimeError) as e:
-                logger.debug(f"Cannot resolve HKATS code for {code}: {e}")
-                return None
-            
-            logger.debug(f"Resolved via Futu: {code} -> {hkats_code} {expiry_str} {strike_float} {option_type_full}")
-            
-            return {
-                'hkats_code': hkats_code,
-                'expiry_date': expiry_str,
-                'strike': strike_float,
-                'option_type': option_type_full
-            }
-        
-        return None
+                return 0.0
+        return 0.0
     
-    def _options_match(self, opt1: Dict, opt2: Dict) -> bool:
+    def _ensure_position_object(
+        self,
+        position,
+        broker_name: str,
+        context: PositionContext = PositionContext.BASE
+    ) -> Position:
         """
-        Check if two parsed option codes represent the same option.
-        
-        For HK options: compares hkats_code, expiry_date, strike, option_type
-        For US options: compares underlying, expiry_date, strike, option_type
+        Ensure every entry in result.positions is a Position instance.
         """
-        # Check underlying symbol (HK options use hkats_code, US options use underlying)
-        hkats1 = opt1.get('hkats_code')
-        hkats2 = opt2.get('hkats_code')
-        underlying1 = opt1.get('underlying', '')
-        underlying2 = opt2.get('underlying', '')
+        if isinstance(position, Position):
+            return position
         
-        # For HK options (both have hkats_code)
-        if hkats1 and hkats2:
-            if hkats1 != hkats2:
-                return False
-        # For US options (both have underlying)
-        elif underlying1 and underlying2:
-            # Extract symbol from underlying (remove 'US.' prefix if present)
-            symbol1 = underlying1.replace('US.', '')
-            symbol2 = underlying2.replace('US.', '')
-            if symbol1 != symbol2:
-                return False
-        # Mixed or missing identifiers
-        else:
-            return False
-        
-        # Check expiry dates
-        date1 = opt1.get('expiry_date')
-        date2 = opt2.get('expiry_date')
-        if not date1 or not date2 or date1 != date2:
-            return False
-        
-        # Check strikes
-        strike1 = opt1.get('strike')
-        strike2 = opt2.get('strike')
-        if strike1 is None or strike2 is None:
-            return False
-        if abs(strike1 - strike2) > 0.01:  # Allow small floating point differences
-            return False
-        
-        # Check option types
-        type1 = opt1.get('option_type', '')
-        type2 = opt2.get('option_type', '')
-        if type1 != type2:
-            return False
-        
-        return True
+        pos_obj = Position(
+            stock_code=position.get('StockCode', ''),
+            holding=self._normalize_holding(position.get('Holding', 0)),
+            broker_price=position.get('BrokerPrice'),
+            price_currency=position.get('PriceCurrency'),
+            raw_description=position.get('RawDescription'),
+            multiplier=position.get('Multiplier'),
+            broker=broker_name,
+            context=context
+        )
+        pos_obj.final_price = position.get('FinalPrice')
+        pos_obj.final_price_source = position.get('FinalPriceSource', '')
+        optimized_currency = position.get('OptimizedPriceCurrency')
+        if optimized_currency:
+            pos_obj.optimized_price_currency = optimized_currency
+        return pos_obj
     
     def _update_prices(
         self, 
@@ -1002,7 +740,9 @@ class TradeConfirmationProcessor:
         unique_symbols = {}
         for result in results:
             for i, position in enumerate(result.positions):
-                stock_code = position['StockCode']
+                pos_obj = self._ensure_position_object(position, result.broker_name)
+                result.positions[i] = pos_obj
+                stock_code = pos_obj.stock_code
                 if stock_code not in unique_symbols:
                     unique_symbols[stock_code] = []
                 unique_symbols[stock_code].append((result, i))
@@ -1016,7 +756,7 @@ class TradeConfirmationProcessor:
                 # Get first position to extract raw_description
                 first_result, first_idx = unique_symbols[symbol][0]
                 first_position = first_result.positions[first_idx]
-                raw_description = first_position.get('RawDescription', '')
+                raw_description = first_position.raw_description or ''
                 
                 # get_stock_price now returns (price, currency) tuple
                 price, api_currency = get_stock_price(symbol, target_date, None, raw_description)
@@ -1029,9 +769,9 @@ class TradeConfirmationProcessor:
                     # Update all positions with this symbol
                     for result, pos_idx in unique_symbols[symbol]:
                         position = result.positions[pos_idx]
-                        position['FinalPrice'] = price
-                        position['FinalPriceSource'] = price_source
-                        position['OptimizedPriceCurrency'] = price_currency
+                        position.final_price = price
+                        position.final_price_source = price_source
+                        position.optimized_price_currency = price_currency
                     
                     successful += 1
                 else:
@@ -1117,4 +857,3 @@ def auto_detect_latest_base_date() -> str:
     latest_date = available_dates[-1]  # List is sorted
     logger.info(f"Auto-detected latest base date: {latest_date}")
     return latest_date
-

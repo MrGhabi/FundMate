@@ -60,3 +60,32 @@ def project_root_path():
     """Project root directory path"""
     return project_root
 
+
+@pytest.fixture
+def tc_base_folder(project_root_path):
+    """Path to base statements used for TC mode regression"""
+    return str(project_root_path / "data" / "20250718_Statement")
+
+
+@pytest.fixture
+def tc_base_date():
+    """Base date for TC regression."""
+    return "2025-07-18"
+
+
+@pytest.fixture
+def tc_target_date():
+    """Target date for TC regression."""
+    return "2025-07-22"
+
+
+@pytest.fixture
+def tc_trade_confirmation_folder(project_root_path):
+    """Path to archived trade confirmation Excel files."""
+    return str(project_root_path / "data" / "archives" / "TradeConfirmation")
+
+
+@pytest.fixture
+def tc_expected_csv(project_root_path, tc_target_date):
+    """Baseline CSV generated from known-good TC run."""
+    return project_root_path / "test" / "fixtures" / "tc_expected" / f"portfolio_details_{tc_target_date}.csv"

@@ -341,20 +341,33 @@ class PriceFetcher:
     """Thin wrapper for legacy compatibility"""
     
     def calculate_position_values(self, positions, date: str, exchange_rates: dict = None, image_processor=None):
-        """Legacy interface adapter"""
+        """Legacy interface adapter (supports both dict and Position objects)"""
         # Preserve RawDescription when converting to holdings format
         holdings = []
         for p in positions:
-            holding = {'symbol': p['StockCode'], 'shares': p['Holding']}
-            if 'RawDescription' in p:
-                holding['RawDescription'] = p['RawDescription']
-            # Pass broker price and currency information
-            if 'BrokerPrice' in p:
-                holding['BrokerPrice'] = p['BrokerPrice']
-            if 'PriceCurrency' in p:
-                holding['PriceCurrency'] = p['PriceCurrency']
-            if 'Multiplier' in p:
-                holding['Multiplier'] = p['Multiplier']
+            # Support both Position objects and dicts
+            if hasattr(p, 'stock_code'):
+                # Position object
+                holding = {'symbol': p.stock_code, 'shares': p.holding}
+                if p.raw_description:
+                    holding['RawDescription'] = p.raw_description
+                if p.broker_price:
+                    holding['BrokerPrice'] = p.broker_price
+                if p.price_currency:
+                    holding['PriceCurrency'] = p.price_currency
+                if p.multiplier:
+                    holding['Multiplier'] = p.multiplier
+            else:
+                # Dict format (legacy)
+                holding = {'symbol': p['StockCode'], 'shares': p['Holding']}
+                if 'RawDescription' in p:
+                    holding['RawDescription'] = p['RawDescription']
+                if 'BrokerPrice' in p:
+                    holding['BrokerPrice'] = p['BrokerPrice']
+                if 'PriceCurrency' in p:
+                    holding['PriceCurrency'] = p['PriceCurrency']
+                if 'Multiplier' in p:
+                    holding['Multiplier'] = p['Multiplier']
             holdings.append(holding)
         
         result = calculate_portfolio_value(holdings, date, exchange_rates=exchange_rates, image_processor=image_processor)

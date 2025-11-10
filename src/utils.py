@@ -401,26 +401,38 @@ def print_asset_summary(results: List["ProcessedResult"], date: str = None) -> N
             broker_display = result.broker_name
             
         for position in result.positions:
+            # Support both Position objects and dicts
+            if hasattr(position, 'stock_code'):
+                # Position object
+                stock_code = position.stock_code
+                raw_desc = position.raw_description
+                holding = position.holding
+                final_price = position.final_price
+                final_price_source = position.final_price_source or 'N/A'
+                price_currency = position.optimized_price_currency or position.price_currency or 'USD'
+            else:
+                # Dict format (legacy)
+                stock_code = position['StockCode']
+                raw_desc = position.get('RawDescription')
+                holding = position['Holding']
+                final_price = position.get('FinalPrice')
+                final_price_source = position.get('FinalPriceSource', 'N/A')
+                price_currency = position.get('OptimizedPriceCurrency') or position.get('PriceCurrency', 'USD')
+            
             # For options, use RawDescription for unique identification
             # Otherwise different option contracts with same underlying get merged
-            stock_code = position['StockCode']
-            if 'OPTION' in stock_code.upper() and position.get('RawDescription'):
+            if 'OPTION' in stock_code.upper() and raw_desc:
                 # Use full option description to distinguish different contracts
-                unique_key = position['RawDescription']
+                unique_key = raw_desc
             else:
                 # Use regular stock code for stocks
                 unique_key = stock_code
-            holding = position['Holding']
+            
             # Ensure holding is numeric
             try:
                 holding_num = int(holding) if isinstance(holding, (int, float)) else int(float(str(holding).replace(',', '')))
             except (ValueError, TypeError):
                 holding_num = 0
-                
-            # Use optimized price data if available
-            final_price = position.get('FinalPrice')
-            final_price_source = position.get('FinalPriceSource', 'N/A')
-            price_currency = position.get('OptimizedPriceCurrency') or position.get('PriceCurrency', 'USD')
             
             if unique_key not in position_aggregation:
                 position_aggregation[unique_key] = {
@@ -439,7 +451,8 @@ def print_asset_summary(results: List["ProcessedResult"], date: str = None) -> N
             # Add position value with currency conversion (preserve original separate calculation logic)
             if final_price is not None:
                 # Calculate individual position value with correct multiplier
-                multiplier = get_option_multiplier(stock_code, position.get('RawDescription'), position.get('Multiplier'))
+                broker_multiplier = position.multiplier if hasattr(position, 'multiplier') else position.get('Multiplier')
+                multiplier = get_option_multiplier(stock_code, raw_desc, broker_multiplier)
                 position_value_original = final_price * holding_num * multiplier
                 
                 if multiplier > 1:

@@ -12,6 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from loguru import logger
 
+try:
+    from .enums import PositionContext
+    from .position import Position
+except (ImportError, ValueError):
+    from enums import PositionContext
+    from position import Position
+
 
 @dataclass
 class OptionPosition:
@@ -192,15 +199,16 @@ class ExcelPositionParser:
         
         return ""
     
-    def _convert_to_standard_format(self, positions: List[OptionPosition]) -> List[Dict[str, str]]:
+    def _convert_to_standard_format(self, positions: List[OptionPosition], broker_name: str = "EXCEL") -> List[Position]:
         """
-        Convert OptionPosition objects to standard position format.
+        Convert OptionPosition objects to Position objects (new architecture)
         
         Args:
             positions: List of OptionPosition objects
+            broker_name: Broker name for Position object
             
         Returns:
-            List of dicts in format: [{'StockCode': str, 'Holding': str}, ...]
+            List of Position objects
         """
         standard_positions = []
         
@@ -223,18 +231,22 @@ class ExcelPositionParser:
             # Convert quantity to holding - preserve sign for sell positions  
             if pos.buy_sell == "Sell":
                 # Option sell should be negative
-                holding = str(-pos.quantity) if pos.quantity > 0 else str(pos.quantity)
+                holding = -pos.quantity if pos.quantity > 0 else pos.quantity
             else:
                 # Option buy should be positive
-                holding = str(pos.quantity)
+                holding = pos.quantity
             
-            standard_positions.append({
-                'StockCode': stock_code,
-                'Holding': holding,
-                'RawDescription': pos.description,  # Preserve original description for option processing
-                'BrokerPrice': pos.broker_price,    # Broker option price
-                'PriceCurrency': pos.price_currency # Price currency
-            })
+            # Create Position object (will auto-parse option if detected)
+            position_obj = Position(
+                stock_code=stock_code,
+                holding=holding,
+                broker_price=pos.broker_price,
+                price_currency=pos.price_currency,
+                raw_description=pos.description,
+                broker=broker_name,
+                context=PositionContext.BASE
+            )
+            standard_positions.append(position_obj)
         
         return standard_positions
     
@@ -273,7 +285,7 @@ class ExcelPositionParser:
             logger.warning(f"Failed to format option symbol: {e}")
             return f"{underlyer} OPTION"
     
-    def parse_directory(self, directory_path: str, target_date: Optional[str] = None, archive_mode: bool = False) -> Dict[str, List[Dict[str, str]]]:
+    def parse_directory(self, directory_path: str, target_date: Optional[str] = None, archive_mode: bool = False) -> Dict[str, List[Position]]:
         """
         Parse all Excel files in directory structure.
         
@@ -287,7 +299,7 @@ class ExcelPositionParser:
             - Statement mode: directory/BROKER/[DATE/]<files>.xls
         
         Returns:
-            Dict: {broker_name: [{'StockCode': str, 'Holding': str}, ...]}
+            Dict: {broker_name: [Position objects]}
         """
         results = {}
         directory = Path(directory_path)
@@ -367,8 +379,8 @@ class ExcelPositionParser:
                     logger.warning(f"Unknown Excel broker: {broker_name}, skipping")
                     continue
                 
-                # Convert to standard format
-                standard_positions = self._convert_to_standard_format(positions)
+                # Convert to standard format (now returns Position objects)
+                standard_positions = self._convert_to_standard_format(positions, broker_name=broker_name)
                 broker_positions.extend(standard_positions)
                 logger.success(f"Extracted {len(positions)} positions from {file_path.name}")
             
@@ -423,7 +435,10 @@ def main():
     for broker_name, positions in results.items():
         print(f"\n{broker_name}: {len(positions)} positions")
         for pos in positions[:5]:  # Show first 5
-            print(f"  {pos['StockCode']}: {pos['Holding']}")
+            if hasattr(pos, 'stock_code'):
+                print(f"  {pos.stock_code}: {pos.holding}")
+            else:
+                print(f"  {pos.get('StockCode')}: {pos.get('Holding')}")
         if len(positions) > 5:
             print(f"  ... and {len(positions) - 5} more")
 
