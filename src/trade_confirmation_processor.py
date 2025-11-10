@@ -12,14 +12,16 @@ from pathlib import Path
 from loguru import logger
 import re
 from datetime import datetime
+import copy
 
 from src.broker_processor import ProcessedResult
 from src.price_fetcher import PriceFetcher, get_stock_price
 from src.data_persistence import DataPersistence
 from src.exchange_rate_handler import exchange_handler
 from src.config import settings
-from src.enums import PositionContext
+from src.enums import PositionContext, OptionType
 from src.position import Position
+from src.option_parser import parse_option
 
 
 @dataclass
@@ -77,6 +79,41 @@ class TradeConfirmationProcessor:
         register_parser(hk_parser)
         logger.info("Configured HKNumericParser with Futu API resolution")
         self._option_parser_configured = True
+
+    def standardize_option_format(self, stock_code: str) -> str:
+        """
+        Normalize option codes so base portfolio and TC share the same canonical format.
+        Uses option parser results; non-options are returned unchanged.
+        """
+        if not stock_code:
+            return stock_code
+
+        try:
+            parsed = parse_option(stock_code)
+        except Exception:
+            return stock_code
+
+        if parsed.format_type == 'UNPARSEABLE':
+            return stock_code
+
+        if parsed.format_type == 'OTC':
+            return stock_code
+
+        cp = 'C' if parsed.option_type == OptionType.CALL else 'P'
+
+        if parsed.format_type == 'US_OCC':
+            ticker = parsed.underlying or stock_code
+            expiry = parsed.expiry_date.strftime('%y%m%d')
+            strike_int = int(round(parsed.strike * 1000))
+            return f"{ticker}{expiry}{cp}{strike_int:05d}"
+
+        if parsed.format_type == 'HK_HKATS':
+            expiry = parsed.expiry_date.strftime('%y%m%d')
+            strike_str = f"{parsed.strike:.2f}"
+            full_cp = 'CALL' if parsed.option_type == OptionType.CALL else 'PUT'
+            return f"{parsed.underlying} {expiry} {strike_str} {full_cp}"
+
+        return stock_code
     
     def resolve_hk_numeric_to_hkats(self, numeric_code: str) -> str:
         """
@@ -168,7 +205,9 @@ class TradeConfirmationProcessor:
         base_broker_folder: str,
         base_date: str,
         target_date: str,
-        tc_folder: str = "data/archives/TradeConfirmation"
+        tc_folder: str = "data/archives/TradeConfirmation",
+        base_results_override: Optional[List[ProcessedResult]] = None,
+        base_exchange_rates_override: Optional[Dict] = None
     ) -> Tuple[List[ProcessedResult], Dict, str]:
         """
         End-to-end TC processing: Reprocess base statements + apply TC + update prices.
@@ -192,16 +231,21 @@ class TradeConfirmationProcessor:
         # Reprocess base statements from broker folder
         from broker_processor import BrokerStatementProcessor
         
-        processor = BrokerStatementProcessor()
-        base_results, base_exchange_rates, _ = processor.process_folder(
-            broker_folder=base_broker_folder,
-            image_output_folder=settings.pictures_dir,
-            date=base_date,
-            broker=None,
-            force=False,
-            max_workers=10,
-            skip_logging_setup=True  # Don't create separate log file
-        )
+        if base_results_override is not None and base_exchange_rates_override is not None:
+            base_results = copy.deepcopy(base_results_override)
+            base_exchange_rates = dict(base_exchange_rates_override)
+        else:
+            from broker_processor import BrokerStatementProcessor
+            processor = BrokerStatementProcessor()
+            base_results, base_exchange_rates, _ = processor.process_folder(
+                broker_folder=base_broker_folder,
+                image_output_folder=settings.pictures_dir,
+                date=base_date,
+                broker=None,
+                force=False,
+                max_workers=10,
+                skip_logging_setup=True  # Don't create separate log file
+            )
         
         if not base_results or not base_exchange_rates:
             raise ValueError(f"Failed to process base statements for {base_date}")
@@ -646,19 +690,20 @@ class TradeConfirmationProcessor:
         Leverages Position.matches_option for fuzzy matching so that different
         option representations (HK numeric vs HKATS vs OCC) still pair up.
         """
+        normalized_code = self.standardize_option_format(stock_code)
         target = Position(
-            stock_code=stock_code,
+            stock_code=normalized_code,
             holding=0,
             broker=broker_name,
             context=PositionContext.TC
         )
-        
+
         for idx, pos in enumerate(positions):
             pos_obj = self._ensure_position_object(pos, broker_name)
             positions[idx] = pos_obj
-            if pos_obj.stock_code == stock_code:
+            if pos_obj.stock_code == normalized_code:
                 return pos_obj
-        
+
         if target.option_format:
             for pos in positions:
                 if pos.option_format and target.matches_option(pos):
@@ -667,7 +712,12 @@ class TradeConfirmationProcessor:
                         f"({target.underlying} {target.strike} {target.option_type})"
                     )
                     return pos
-        
+
+        for pos in positions:
+            pos_obj = self._ensure_position_object(pos, broker_name)
+            if self.standardize_option_format(pos_obj.stock_code) == normalized_code:
+                return pos_obj
+
         return None
     
     @staticmethod

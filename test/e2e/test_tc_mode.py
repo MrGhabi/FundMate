@@ -1,10 +1,12 @@
 """
 TC Mode end-to-end regression test.
 
-Runs the trade confirmation pipeline (base statements + TC Excel files) and
-verifies the generated CSV matches a known-good baseline snapshot.
+Loads a cached base portfolio snapshot, runs trade confirmations, and
+validates the generated CSV against a known-good baseline.
 """
 
+import json
+import copy
 import sys
 from pathlib import Path
 
@@ -13,8 +15,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from trade_confirmation_processor import TradeConfirmationProcessor
-from data_persistence import DataPersistence
+import src.trade_confirmation_processor as tcp
+from src.trade_confirmation_processor import TradeConfirmationProcessor
+from src.data_persistence import DataPersistence
+from src.broker_processor import ProcessedResult
+from src.position import Position
 
 
 @pytest.mark.slow
@@ -29,14 +34,19 @@ class TestTradeConfirmationMode:
         tc_target_date,
         tc_trade_confirmation_folder,
         tc_expected_csv,
+        tc_base_fixture_dir,
         tmp_path
     ):
+        base_results, base_rates = self._load_base_results_from_fixture(tc_base_fixture_dir)
+
         processor = TradeConfirmationProcessor()
         results, exchange_rates, processed_date = processor.process_with_trade_confirmation(
             base_broker_folder=tc_base_folder,
             base_date=tc_base_date,
             target_date=tc_target_date,
-            tc_folder=tc_trade_confirmation_folder
+            tc_folder=tc_trade_confirmation_folder,
+            base_results_override=base_results,
+            base_exchange_rates_override=base_rates,
         )
 
         assert processed_date == tc_target_date
@@ -53,10 +63,61 @@ class TestTradeConfirmationMode:
         self._assert_csv_matches_baseline(generated_csv, tc_expected_csv)
 
     @staticmethod
+    def _load_base_results_from_fixture(base_dir: Path):
+        metadata = json.load(open(base_dir / f"metadata_{base_dir.name}.json", "r", encoding="utf-8"))
+        cash_df = pd.read_parquet(base_dir / f"cash_summary_{base_dir.name}.parquet")
+        positions_df = pd.read_parquet(base_dir / f"positions_{base_dir.name}.parquet")
+
+        results = []
+        for _, cash_row in cash_df.iterrows():
+            broker = cash_row["broker_name"]
+            account = cash_row["account_id"]
+            cash_data = {
+                "CNY": cash_row.get("cny"),
+                "HKD": cash_row.get("hkd"),
+                "USD": cash_row.get("usd"),
+                "Total": cash_row.get("total"),
+                "Total_type": cash_row.get("total_type"),
+            }
+            subset = positions_df[
+                (positions_df["broker_name"] == broker) &
+                (positions_df["account_id"] == account)
+            ]
+            position_objs = []
+            for _, row in subset.iterrows():
+                pos = Position(
+                    stock_code=row["stock_code"],
+                    holding=row["holding"],
+                    broker_price=row.get("broker_price"),
+                    price_currency=row.get("broker_price_currency"),
+                    raw_description=row.get("raw_description"),
+                    multiplier=row.get("multiplier"),
+                    broker=broker,
+                )
+                pos.final_price = row.get("final_price")
+                pos.final_price_source = row.get("final_price_source")
+                if row.get("optimized_price_currency"):
+                    pos.optimized_price_currency = row.get("optimized_price_currency")
+                position_objs.append(pos)
+
+            results.append(
+                ProcessedResult(
+                    broker_name=broker,
+                    account_id=account,
+                    cash_data=cash_data,
+                    positions=position_objs,
+                    usd_total=cash_row.get("usd_total") or 0.0,
+                )
+            )
+
+        exchange_rates = metadata.get("exchange_rates", {})
+        return results, exchange_rates
+
+    @staticmethod
     def _assert_csv_matches_baseline(current_path: Path, baseline_path: Path):
         """
         Compare generated CSV with baseline using deterministic subset of columns.
-        
+
         Raw descriptions can vary slightly because PDF parsing relies on LLM output,
         so we focus on stability-critical columns (codes, holdings, pricing).
         """

@@ -1,0 +1,30 @@
+{
+  "date": "2025-07-18",
+  "timestamp": "2025-11-09T00:12:08.519944",
+  "broker_count": 12,
+  "total_positions": 30,
+  "exchange_rates": {
+    "USD": 1.0,
+    "HKD": 0.127472,
+    "CNY": 0.139316
+  },
+  "brokers_processed": [
+    "IB",
+    "TFI",
+    "First Shanghai",
+    "LB",
+    "HTI",
+    "CICC",
+    "HUATAI",
+    "SDICS",
+    "TIGER",
+    "MOOMOO",
+    "GS",
+    "MS"
+  ],
+  "files": {
+    "cash_summary": "cash_summary_2025-07-18.parquet",
+    "positions": "positions_2025-07-18.parquet",
+    "portfolio_csv": "portfolio_details_2025-07-18.csv"
+  }
+}

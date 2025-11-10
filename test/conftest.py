@@ -89,3 +89,9 @@ def tc_trade_confirmation_folder(project_root_path):
 def tc_expected_csv(project_root_path, tc_target_date):
     """Baseline CSV generated from known-good TC run."""
     return project_root_path / "test" / "fixtures" / "tc_expected" / f"portfolio_details_{tc_target_date}.csv"
+
+
+@pytest.fixture
+def tc_base_fixture_dir(project_root_path, tc_base_date):
+    """Directory containing saved base portfolio outputs for TC regression."""
+    return project_root_path / "test" / "fixtures" / "tc_base" / tc_base_date
