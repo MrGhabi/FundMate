@@ -29,6 +29,10 @@ FundMate is a production-ready financial data processor that extracts cash holdi
    pip install -e .
    ```
 2. 之后运行 CLI/脚本时使用 `python -m src.<module>`（例如 `python -m src.main ...`）；IDE、测试与 web 服务都会自动解析依赖，不再需要手工调整 `PYTHONPATH` 或在代码里写特殊导入逻辑。
+3. 若需要运行 Flask Web UI，请额外安装可选依赖：
+   ```bash
+   pip install -e .[web]
+   ```
 
 ## SUPPORTED BROKERS
 
@@ -198,6 +202,16 @@ python -m src.main data/archives --date 2025-07-22 --use-tc \
 **Prerequisites**:
 - Base portfolio must exist (run normal mode first for the base date)
 - Trade confirmation files must be preprocessed with standard naming: `TC-{YYYY-MM-DD}-{original_name}.xlsx`
+
+## WEB UI
+
+FundMate ships with a Flask-based dashboard that lives inside the `src.webapp` package. After completing the editable install (`pip install -e .`) and installing the optional extras (`pip install -e .[web]`), all resources (templates/static assets) are importable regardless of your working directory.
+
+- **Development server**: `./run_web.sh 5000` (defaults to `localhost:5000`, hot reload enabled).
+- **Direct Python entrypoint**: `python -m src.webapp.app` (respects the same configuration as the shell script).
+- **Production**: `gunicorn -c gunicorn.conf.py src.webapp.app:app`.
+
+The web UI reads from the standard output directory (`./out/result/<date>`). Make sure you have processed at least one broker statement or injected trade-confirmation results before launching the UI.
 - Use `src/scripts/rename_trade_confirmations.py` to preprocess files if needed
 
 ## TRADE CONFIRMATION FILE PREPROCESSING

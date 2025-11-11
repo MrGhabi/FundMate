@@ -18,9 +18,15 @@ import re
 
 from src.config import settings
 
-app = Flask(__name__,
-            template_folder='web/templates',
-            static_folder='web/static')
+PACKAGE_ROOT = Path(__file__).resolve().parent
+TEMPLATE_DIR = PACKAGE_ROOT / 'templates'
+STATIC_DIR = PACKAGE_ROOT / 'static'
+
+app = Flask(
+    __name__,
+    template_folder=str(TEMPLATE_DIR),
+    static_folder=str(STATIC_DIR),
+)
 
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -905,9 +911,9 @@ def format_percent_filter(value):
 
 
 if __name__ == '__main__':
-    # Create necessary directories
-    Path('web/templates').mkdir(parents=True, exist_ok=True)
-    Path('web/static/css').mkdir(parents=True, exist_ok=True)
-    Path('web/static/js').mkdir(parents=True, exist_ok=True)
+    # Create necessary directories within the package for local development
+    TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
+    (STATIC_DIR / 'css').mkdir(parents=True, exist_ok=True)
+    (STATIC_DIR / 'js').mkdir(parents=True, exist_ok=True)
 
     app.run(debug=True, host='0.0.0.0', port=5000)

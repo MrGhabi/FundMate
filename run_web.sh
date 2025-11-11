@@ -16,7 +16,7 @@ echo ""
 # Check if Flask is installed
 if ! python -c "import flask" 2>/dev/null; then
     echo "Error: Flask is not installed"
-    echo "Please run: pip install -r requirements-web.txt"
+    echo "Please run: pip install -e .[web]"
     exit 1
 fi
 
@@ -26,7 +26,7 @@ if [ ! -d "./out/result" ]; then
     echo "Have you processed any broker statements yet?"
     echo ""
     echo "To process statements, run:"
-    echo "  python src/main.py ./data/statements --date YYYY-MM-DD"
+    echo "  python -m src.main ./data/statements --date YYYY-MM-DD"
     echo ""
 fi
 
@@ -45,8 +45,8 @@ echo "Press Ctrl+C to stop the server"
 echo "========================================="
 echo ""
 
-# Start the Flask app
-FLASK_APP=web_app.py FLASK_ENV=development python -c "
-from web_app import app
+# Start the Flask app inside the package
+FLASK_ENV=development python -c "
+from src.webapp.app import app
 app.run(host='0.0.0.0', port=$PORT, debug=True)
 "

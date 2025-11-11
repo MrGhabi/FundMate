@@ -1,5 +1,5 @@
 # Gunicorn Configuration File for FundMate Web Application
-# Usage: gunicorn -c gunicorn.conf.py web_app:app
+# Usage: gunicorn -c gunicorn.conf.py src.webapp.app:app
 
 import multiprocessing
 import os

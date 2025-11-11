@@ -8,6 +8,14 @@
 python src/main.py BROKER_FOLDER --date DATE [选项]
 ```
 
+### 安装建议
+
+```bash
+pip install -e .
+# 若需要 Web UI
+pip install -e .[web]
+```
+
 ## 描述
 
 FundMate是一个生产级金融数据处理系统，用于从券商对账单中提取现金资产和持仓数据。支持PDF和Excel两种格式，使用LLM进行智能数据提取，并提供基于实时市价的资产估值。
@@ -74,6 +82,16 @@ FundMate是一个生产级金融数据处理系统，用于从券商对账单中
 
 **--tc-folder PATH**
   交易确认书文件夹路径。默认：`data/archives/TradeConfirmation`。交易确认书文件必须遵循命名规范：`TC-{YYYY-MM-DD}-{原始文件名}.xlsx`
+
+## Web 界面
+
+FundMate 自带的 Flask 看板位于 `src/webapp` 包内。完成一次 `pip install -e .` 并额外执行 `pip install -e .[web]` 后，不论你从哪个工作目录启动，模板与静态资源都能正确加载。
+
+- **开发模式**：`./run_web.sh 5000`（默认监听 `localhost:5000`，支持热重载）
+- **直接入口**：`python -m src.webapp.app`
+- **生产部署**：`gunicorn -c gunicorn.conf.py src.webapp.app:app`
+
+Web UI 会读取 `./out/result/<date>` 下的输出，所以启动前请先跑一遍日结或交易确认流程，确保有数据可视化。
 
 ## 目录结构
 
