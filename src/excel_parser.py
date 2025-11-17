@@ -42,14 +42,15 @@ class ExcelPositionParser:
     def __init__(self):
         pass
     
-    def _match_archive_filename(self, filename: str, broker: str, date: str) -> bool:
+    def _extract_archive_date(self, filename: str, broker: str) -> Optional[str]:
         """
-        检查归档文件名是否匹配券商和日期
-        归档文件名格式: {BROKER}_{YYYY-MM-DD}_{ID}.ext
+        Extract date from archive filename: {BROKER}_{YYYY-MM-DD}_{ID}.ext
         """
-        # 允许大小写不敏感的匹配
-        pattern = rf"{re.escape(broker)}_({re.escape(date)})_.*"
-        return re.match(pattern, filename, re.IGNORECASE) is not None
+        pattern = rf"{re.escape(broker)}_(\d{{4}}-\d{{2}}-\d{{2}})_.*"
+        match = re.match(pattern, filename, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        return None
     
     def parse_ms_file(self, file_path: str) -> List[OptionPosition]:
         """
@@ -320,6 +321,7 @@ class ExcelPositionParser:
             
             broker_positions = []
             excel_files = []
+            broker_statement_date: Optional[str] = None
             
             if archive_mode:
                 # 归档模式：从文件名过滤
@@ -327,19 +329,25 @@ class ExcelPositionParser:
                     logger.error(f"Archive mode requires target_date parameter")
                     raise ValueError("Archive mode requires target_date parameter")
                 
-                # 查找文件名匹配 {券商}_{日期}_* 的Excel文件
+                # 查找最接近 target_date 的 Excel 文件
                 all_excel_files = list(broker_dir.glob("*.xls")) + list(broker_dir.glob("*.xlsx")) + \
                                  list(broker_dir.glob("*.XLS")) + list(broker_dir.glob("*.XLSX"))
-                
+                dated_files = []
                 for excel_file in all_excel_files:
-                    # 文件名格式: {BROKER}_{YYYY-MM-DD}_{ID}.xls
-                    if self._match_archive_filename(excel_file.name, broker_name, target_date):
-                        excel_files.append(excel_file)
+                    matched_date = self._extract_archive_date(excel_file.name, broker_name)
+                    if matched_date and matched_date <= target_date:
+                        dated_files.append((matched_date, excel_file))
                 
-                if not excel_files:
-                    logger.warning(f"No archived Excel files found for {broker_name} on {target_date}")
-                    logger.warning(f"Expected filename pattern: {broker_name}_{target_date}_*.xls[x]")
+                if not dated_files:
+                    logger.warning(f"No archived Excel files found for {broker_name} on or before {target_date}")
+                    logger.warning(f"Expected filename pattern: {broker_name}_YYYY-MM-DD_*.xls[x]")
                     continue
+                
+                matched_date, excel_file = max(dated_files, key=lambda x: x[0])
+                if matched_date != target_date:
+                    logger.info(f"{broker_name}: no {target_date} Excel found; using nearest {matched_date}")
+                excel_files.append(excel_file)
+                broker_statement_date = matched_date
             else:
                 # Statement模式：原有逻辑
                 # Determine search paths (prefer date-specific folder if provided)
@@ -363,6 +371,7 @@ class ExcelPositionParser:
                 if not excel_files:
                     logger.info(f"No Excel files found for {broker_name}")
                     continue
+                broker_statement_date = target_date
 
             for file_path in excel_files:
                 logger.info(f"Processing Excel file: {file_path}")
@@ -381,7 +390,10 @@ class ExcelPositionParser:
                 logger.success(f"Extracted {len(positions)} positions from {file_path.name}")
             
             if broker_positions:
-                results[broker_name] = broker_positions
+                results[broker_name] = {
+                    "positions": broker_positions,
+                    "statement_date": broker_statement_date or target_date
+                }
         
         return results
     

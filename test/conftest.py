@@ -82,7 +82,7 @@ def tc_target_date():
 @pytest.fixture
 def tc_trade_confirmation_folder(project_root_path):
     """Path to archived trade confirmation Excel files."""
-    return str(project_root_path / "data" / "archives" / "TradeConfirmation")
+    return str(project_root_path / "data" / "archives" / "TC")
 
 
 @pytest.fixture

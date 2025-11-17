@@ -88,6 +88,36 @@ class TradeConfirmationProcessor:
         if not stock_code:
             return stock_code
 
+        # First normalize simple equity codes (e.g., 1263 HK -> 01263)
+        stock_code = self._normalize_equity_code(stock_code)
+
+        # Motivation: Bloomberg/US-style HK option strings (e.g., "700 HK 06/29/26 C600")
+        # do not pass through parse_option() by default, but we still want them to match
+        # the base portfolio's HKATS format. Before invoking parse_option, detect this
+        # pattern and convert it into the canonical HKATS descriptor so both TC and base
+        # data share the same representation.
+        hk_option_match = re.match(
+            r'^(?P<underlying>\d{3,4})\s+HK\s+(?P<expiry>\d{2}/\d{2}/\d{2})\s+(?P<cp>[CP])(?P<strike>\d+(\.\d+)?)$',
+            stock_code.strip().upper()
+        )
+        if hk_option_match:
+            raw_underlying = hk_option_match.group('underlying')
+            underlying_digits = raw_underlying.lstrip('0') or '0'
+            underlying = raw_underlying.zfill(4)
+            expiry = datetime.strptime(hk_option_match.group('expiry'), '%m/%d/%y').strftime('%y%m%d')
+            strike = float(hk_option_match.group('strike'))
+            cp = hk_option_match.group('cp')
+            option_type = 'CALL' if cp == 'C' else 'PUT'
+            # Try mapping numeric HK code to HKATS ticker for better matching
+            hkats_underlying = underlying
+            try:
+                hkats_underlying = self.resolve_hk_numeric_to_hkats(underlying_digits)
+            except Exception:
+                # Keep numeric fallback if mapping fails or Futu unavailable
+                hkats_underlying = underlying
+            # HKATS format: <UNDERLYING> <YYMMDD> <STRIKE> CALL/PUT
+            return f"{hkats_underlying} {expiry} {strike:.2f} {option_type}"
+
         try:
             parsed = parse_option(stock_code)
         except Exception:
@@ -205,7 +235,7 @@ class TradeConfirmationProcessor:
         base_broker_folder: str,
         base_date: str,
         target_date: str,
-        tc_folder: str = "data/archives/TradeConfirmation",
+        tc_folder: str = "data/archives/TC",
         base_results_override: Optional[List[ProcessedResult]] = None,
         base_exchange_rates_override: Optional[Dict] = None
     ) -> Tuple[List[ProcessedResult], Dict, str]:
@@ -251,6 +281,32 @@ class TradeConfirmationProcessor:
             raise ValueError(f"Failed to process base statements for {base_date}")
         
         logger.success(f"Base portfolio processed: {len(base_results)} brokers, date={base_date}")
+        base_dt = datetime.strptime(base_date, '%Y-%m-%d')
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+
+        broker_statement_dates: Dict[str, datetime] = {}
+        for result in base_results:
+            broker_key = result.broker_name.strip().upper()
+            stmt_str = result.statement_date or base_date
+            try:
+                stmt_dt = datetime.strptime(stmt_str, '%Y-%m-%d')
+            except ValueError:
+                logger.warning(
+                    f"Invalid statement_date '{stmt_str}' for {result.broker_name}; "
+                    f"falling back to base_date {base_date}"
+                )
+                stmt_dt = base_dt
+            existing_dt = broker_statement_dates.get(broker_key)
+            if existing_dt is None or stmt_dt < existing_dt:
+                broker_statement_dates[broker_key] = stmt_dt
+
+        if not broker_statement_dates:
+            raise ValueError("Failed to determine statement dates for brokers")
+
+        global_start_dt = min(broker_statement_dates.values())
+        if global_start_dt > target_dt:
+            global_start_dt = target_dt
+        start_date_for_tc = global_start_dt.strftime('%Y-%m-%d')
         
         logger.info("=" * 80)
         logger.info("PHASE 2: Applying Trade Confirmations")
@@ -258,7 +314,7 @@ class TradeConfirmationProcessor:
         
         # Parse trade confirmations (expects standardized filenames)
         transactions = self._parse_trade_confirmations(
-            tc_folder, base_date, target_date
+            tc_folder, start_date_for_tc, target_date
         )
         logger.info(f"Parsed {len(transactions)} transactions from TC files")
         
@@ -278,7 +334,11 @@ class TradeConfirmationProcessor:
         
         # Apply transactions to base results
         updated_results = self._apply_transactions(
-            base_results, transactions
+            base_results,
+            transactions,
+            broker_statement_dates,
+            target_date,
+            base_date
         )
         
         logger.info("=" * 80)
@@ -349,15 +409,25 @@ class TradeConfirmationProcessor:
             
             logger.info(f"  Extracted {len(file_transactions)} transactions")
         
-        # Filter transactions by Trade Date (start_date, end_date]
+        from datetime import datetime as _dt
+        start_dt = _dt.strptime(start_date, '%Y-%m-%d')
+        end_dt = _dt.strptime(end_date, '%Y-%m-%d')
+
+        if start_dt > end_dt:
+            logger.warning(
+                f"TC start_date {start_date} is after end_date {end_date}; "
+                f"swapping to avoid empty range"
+            )
+            start_dt, end_dt = end_dt, start_dt
+
         transactions = [
             txn for txn in all_transactions
-            if start_date < txn.date <= end_date
+            if start_dt <= _dt.strptime(txn.date, '%Y-%m-%d') <= end_dt
         ]
         
         logger.info(
             f"Filtered {len(transactions)}/{len(all_transactions)} transactions "
-            f"in date range ({start_date}, {end_date}]"
+            f"in date range [{start_dt.strftime('%Y-%m-%d')}, {end_dt.strftime('%Y-%m-%d')}]"
         )
         
         return transactions
@@ -458,6 +528,7 @@ class TradeConfirmationProcessor:
                         stock_code = stock_code[:-3].strip()
                 
                 stock_code = self._remove_leading_prefix(stock_code.strip())
+                stock_code = self._normalize_equity_code(stock_code)
                 
                 # Normalize Amount to absolute value for consistent processing
                 # TC files may have signed (US) or unsigned (Asia) amounts
@@ -503,11 +574,37 @@ class TradeConfirmationProcessor:
             if third.upper() in {'HK', 'C1', 'US'}:
                 return ' '.join(tokens[1:])
         return stock_code
-    
+
+    def _normalize_equity_code(self, stock_code: str) -> str:
+        """
+        Normalize equity stock codes so TC and base portfolios match.
+        Examples:
+            1263 HK  -> 01263
+            HK.1263  -> 01263
+            01263    -> 01263
+        Non-equity/option strings are returned unchanged.
+        """
+        if not stock_code:
+            return stock_code
+
+        code = stock_code.strip()
+        upper = code.upper()
+
+        # Handle HK numeric formats (HK.01263, 01263 HK, 1263, etc.)
+        hk_match = re.match(r'^(?:HK\.)?0*(\d{1,5})(?:\s*HK)?$', upper)
+        if hk_match:
+            digits = hk_match.group(1)
+            return f"{int(digits):05d}"
+
+        return code
+
     def _apply_transactions(
         self, 
         base_results: List[ProcessedResult],
-        transactions: List[Transaction]
+        transactions: List[Transaction],
+        broker_statement_dates: Dict[str, datetime],
+        target_date: str,
+        fallback_base_date: str
     ) -> List[ProcessedResult]:
         """
         Apply transactions to base portfolio.
@@ -515,11 +612,17 @@ class TradeConfirmationProcessor:
         Args:
             base_results: Base portfolio results
             transactions: List of transactions to apply
+            broker_statement_dates: Per-broker statement date mapping
+            target_date: Target processing date
+            fallback_base_date: Base date for missing statement metadata
             
         Returns:
             Updated portfolio results
         """
         logger.info("Applying transactions to base portfolio...")
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        fallback_dt = datetime.strptime(fallback_base_date, '%Y-%m-%d')
+        inclusive_start_brokers = {'LB'}
         
         # Group transactions by broker (case-insensitive)
         broker_txns = {}
@@ -535,8 +638,38 @@ class TradeConfirmationProcessor:
             
             if broker_key in broker_txns:
                 txns = broker_txns[broker_key]
-                logger.info(f"Applying {len(txns)} transactions to {result.broker_name}")
-                self._apply_broker_transactions(result, txns)
+                statement_dt = broker_statement_dates.get(broker_key, fallback_dt)
+                if statement_dt > target_dt:
+                    logger.warning(
+                        f"Skipping TC for {result.broker_name}: statement date "
+                        f"{statement_dt.date()} is after target date {target_date}"
+                    )
+                    continue
+
+                inclusive_start = broker_key in inclusive_start_brokers
+                filtered_txns = []
+                for txn in txns:
+                    txn_dt = datetime.strptime(txn.date, '%Y-%m-%d')
+                    if inclusive_start:
+                        in_range = statement_dt <= txn_dt <= target_dt
+                    else:
+                        in_range = statement_dt < txn_dt <= target_dt
+                    if in_range:
+                        filtered_txns.append(txn)
+
+                if not filtered_txns:
+                    logger.debug(
+                        f"No eligible transactions for {result.broker_name} "
+                        f"after filtering by statement date {statement_dt.date()}"
+                    )
+                    continue
+
+                logger.info(
+                    f"Applying {len(filtered_txns)} transactions to {result.broker_name} "
+                    f"(range {'[' if inclusive_start else '('}"
+                    f"{statement_dt.strftime('%Y-%m-%d')}, {target_date}])"
+                )
+                self._apply_broker_transactions(result, filtered_txns)
             else:
                 logger.debug(f"No transactions for {result.broker_name}")
         
@@ -701,7 +834,10 @@ class TradeConfirmationProcessor:
         for idx, pos in enumerate(positions):
             pos_obj = self._ensure_position_object(pos, broker_name)
             positions[idx] = pos_obj
-            if pos_obj.stock_code == normalized_code:
+            pos_normalized = self.standardize_option_format(
+                self._normalize_equity_code(pos_obj.stock_code)
+            )
+            if pos_normalized == normalized_code:
                 return pos_obj
 
         if target.option_format:
@@ -715,7 +851,10 @@ class TradeConfirmationProcessor:
 
         for pos in positions:
             pos_obj = self._ensure_position_object(pos, broker_name)
-            if self.standardize_option_format(pos_obj.stock_code) == normalized_code:
+            pos_normalized = self.standardize_option_format(
+                self._normalize_equity_code(pos_obj.stock_code)
+            )
+            if pos_normalized == normalized_code:
                 return pos_obj
 
         return None

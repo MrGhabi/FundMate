@@ -40,6 +40,27 @@ class TestTradeConfirmationMode:
         base_results, base_rates = self._load_base_results_from_fixture(tc_base_fixture_dir)
 
         processor = TradeConfirmationProcessor()
+        fallback_hkats = {
+            "02628": "CLI",
+            "2628": "CLI",
+            "00700": "TCH",
+            "0700": "TCH",
+        }
+
+        def _fake_hkats_resolver(code: str) -> str:
+            normalized = str(code).strip().upper()
+            if normalized.startswith("HK."):
+                normalized = normalized[3:]
+            try:
+                normalized = f"{int(normalized):05d}"
+            except ValueError:
+                return normalized
+            mapped = fallback_hkats.get(normalized)
+            if not mapped:
+                return normalized
+            return mapped
+
+        processor.resolve_hk_numeric_to_hkats = _fake_hkats_resolver
         results, exchange_rates, processed_date = processor.process_with_trade_confirmation(
             base_broker_folder=tc_base_folder,
             base_date=tc_base_date,
@@ -100,6 +121,7 @@ class TestTradeConfirmationMode:
                     pos.optimized_price_currency = row.get("optimized_price_currency")
                 position_objs.append(pos)
 
+            statement_date = cash_row.get("statement_date")
             results.append(
                 ProcessedResult(
                     broker_name=broker,
@@ -107,6 +129,7 @@ class TestTradeConfirmationMode:
                     cash_data=cash_data,
                     positions=position_objs,
                     usd_total=cash_row.get("usd_total") or 0.0,
+                    statement_date=statement_date or base_dir.name
                 )
             )
 
@@ -123,6 +146,10 @@ class TestTradeConfirmationMode:
         """
         current_df = pd.read_csv(current_path)
         baseline_df = pd.read_csv(baseline_path)
+
+        # Cash rows are informational and not part of regression comparison
+        current_df = current_df[current_df["stock_code"] != "[CASH]"].copy()
+        baseline_df = baseline_df[baseline_df["stock_code"] != "[CASH]"].copy()
 
         required_columns = [
             "broker_name",

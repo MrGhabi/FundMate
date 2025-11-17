@@ -78,6 +78,7 @@ class DataPersistence:
         # Prepare cash summary data
         cash_data = []
         positions_data = []
+        csv_cash_rows = []
         
         for result in results:
             # ========== MMF Reclassification ==========
@@ -166,6 +167,7 @@ class DataPersistence:
                 'date': date,
                 'broker_name': result.broker_name,
                 'account_id': result.account_id,
+                'statement_date': result.statement_date or date,
                 'cny': result.cash_data.get('CNY'),
                 'hkd': result.cash_data.get('HKD'),
                 'usd': result.cash_data.get('USD'),
@@ -236,6 +238,24 @@ class DataPersistence:
                     'timestamp': datetime.now().isoformat()
                 }
                 positions_data.append(position_row)
+
+            cash_row = {
+                'date': date,
+                'broker_name': result.broker_name,
+                'account_id': result.account_id,
+                'stock_code': '[CASH]',
+                'raw_description': 'Cash balance (converted to USD)',
+                'holding': 0,
+                'broker_price': None,
+                'broker_price_currency': 'USD',
+                'final_price': None,
+                'final_price_source': 'Cash',
+                'optimized_price_currency': 'USD',
+                'multiplier': 1.0,
+                'position_value_usd': float(result.usd_total or 0),
+                'timestamp': datetime.now().isoformat()
+            }
+            csv_cash_rows.append(cash_row)
         
         # Save cash summary to Parquet with detailed logging
         cash_df = pd.DataFrame(cash_data)
@@ -256,6 +276,9 @@ class DataPersistence:
         # Export comprehensive CSV report (exclude timestamp for cleaner output)
         csv_file = date_dir / f"portfolio_details_{date}.csv"
         csv_df = positions_df.drop(columns=['timestamp']).copy()
+        if csv_cash_rows:
+            cash_rows_df = pd.DataFrame(csv_cash_rows).drop(columns=['timestamp'])
+            csv_df = pd.concat([csv_df, cash_rows_df], ignore_index=True, sort=False)
         # Round position_value_usd to 2 decimal places
         csv_df['position_value_usd'] = csv_df['position_value_usd'].round(2)
         

@@ -60,6 +60,7 @@ class ProcessedResult:
     usd_total: float = 0.0
     position_values: Dict[str, Any] = None
     total_position_value_usd: float = 0.0
+    statement_date: Optional[str] = None
     
     def __post_init__(self):
         if self.position_values is None:
@@ -194,12 +195,14 @@ class BrokerStatementProcessor:
             results = []
             
             # Convert Excel data to ProcessedResult format
-            for broker_name, positions in excel_data.items():
+            for broker_name, broker_payload in excel_data.items():
                 # Apply broker filter if specified
                 if broker_filter and broker_name.upper() != broker_filter.upper():
                     logger.info(f"Skipping {broker_name} - not matching filter '{broker_filter}'")
                     continue
                     
+                positions = broker_payload.get("positions", [])
+                statement_date = broker_payload.get("statement_date") or date
                 logger.info(f"Processing {len(positions)} Excel positions for {broker_name}")
                 
                 # Create ProcessedResult for Excel data
@@ -209,7 +212,8 @@ class BrokerStatementProcessor:
                     account_id='EXCEL',  # Mark as Excel source
                     cash_data={'Total': 0.0, 'Total_type': 'USD'},  # No cash in Excel
                     positions=positions,
-                    usd_total=0.0  # No cash
+                    usd_total=0.0,  # No cash
+                    statement_date=statement_date
                 )
                 
                 # Calculate position values using PriceFetcher
@@ -381,14 +385,26 @@ class BrokerStatementProcessor:
         """
         return 'archives' in Path(broker_folder).parts
     
-    def _match_archive_filename(self, filename: str, broker: str, date: str) -> bool:
+    def _extract_archive_date(self, filename: str, broker: str) -> Optional[str]:
         """
-        检查归档文件名是否匹配券商和日期
-        归档文件名格式: {BROKER}_{YYYY-MM-DD}_{ID}.ext
+        提取归档文件名中的日期，格式 {BROKER}_{YYYY-MM-DD}_{ID}.ext
+        返回 YYYY-MM-DD 字符串或 None
         """
-        # 允许大小写不敏感的匹配
-        pattern = rf"{re.escape(broker)}_({re.escape(date)})_.*"
-        return re.match(pattern, filename, re.IGNORECASE) is not None
+        pattern = rf"{re.escape(broker)}_(\d{{4}}-\d{{2}}-\d{{2}})_.*"
+        match = re.match(pattern, filename, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        return None
+
+    def _broker_has_excel_archives(self, broker_dir: Path) -> bool:
+        """
+        Check if broker archive directory contains Excel files (used to downgrade missing PDF warnings).
+        """
+        excel_patterns = ["*.xls", "*.xlsx", "*.XLS", "*.XLSX"]
+        for pattern in excel_patterns:
+            if any(broker_dir.glob(pattern)):
+                return True
+        return False
     
     def _process_broker_pdfs(self, pdf_root: str, exchange_rates: dict, broker_filter: str = None, date: str = None, max_workers: int = 10, force: bool = False) -> List[ProcessedResult]:
         """
@@ -426,9 +442,9 @@ class BrokerStatementProcessor:
             
             broker_name = broker_dir.name
 
-            # Skip temporary upload directories
-            if broker_name.lower() == 'temp':
-                logger.debug("Skipping temporary upload directory")
+            # Skip folders not representing brokers (temp uploads, TC storage, etc.)
+            if broker_name.lower() in {'temp', 'tradeconfirmation'}:
+                logger.debug(f"Skipping non-broker directory: {broker_name}")
                 continue
             
             # Apply broker filter
@@ -444,16 +460,30 @@ class BrokerStatementProcessor:
                     logger.error(f"Archive mode requires --date parameter")
                     raise ValueError("Archive mode requires date parameter")
                 
-                # 查找文件名匹配 {券商}_{日期}_* 的PDF文件
+                # 查找最接近 target_date 的 PDF
                 all_pdfs = list(broker_dir.glob("*.pdf"))
+                dated_files = []
                 for pdf_file in all_pdfs:
-                    if self._match_archive_filename(pdf_file.name, broker_name, date):
-                        pdf_files.append(pdf_file)
+                    matched_date = self._extract_archive_date(pdf_file.name, broker_name)
+                    if matched_date and matched_date <= date:
+                        dated_files.append((matched_date, pdf_file))
                 
-                if not pdf_files:
-                    logger.warning(f"No archived PDF files found for {broker_name} on {date}")
-                    logger.warning(f"Expected filename pattern: {broker_name}_{date}_*.pdf")
+                if not dated_files:
+                    if self._broker_has_excel_archives(broker_dir):
+                        logger.info(f"No archived PDFs for {broker_name}; Excel files will be used instead")
+                    else:
+                        logger.warning(f"No archived PDF files found for {broker_name} on or before {date}")
+                        logger.warning(f"Expected filename pattern: {broker_name}_YYYY-MM-DD_*.pdf")
                     continue
+                
+                # 选择最接近 target_date 的文件
+                matched_date, pdf_file = max(dated_files, key=lambda x: x[0])
+                if matched_date != date:
+                    logger.info(
+                        f"{broker_name}: no {date} statement found; using nearest {matched_date}"
+                    )
+                pdf_files.append(pdf_file)
+                statement_date = matched_date
                     
             else:
                 # Statement模式：原有逻辑
@@ -477,6 +507,7 @@ class BrokerStatementProcessor:
                 if not pdf_files:
                     logger.info(f"No PDF files found for {broker_name}")
                     continue
+                statement_date = date
             
             logger.info(f"Found {len(pdf_files)} PDF files for {broker_name}")
             
@@ -487,7 +518,8 @@ class BrokerStatementProcessor:
                     'broker_name': broker_name,
                     'exchange_rates': exchange_rates,
                     'date': date,
-                    'force': force
+                    'force': force,
+                    'statement_date': statement_date
                 })
         
         if not pdf_tasks:
@@ -560,6 +592,7 @@ class BrokerStatementProcessor:
         exchange_rates = task['exchange_rates']
         date = task['date']
         force = task.get('force', False)
+        statement_date = task.get('statement_date') or date
         
         try:
             # Process PDF with PDFProcessor
@@ -604,7 +637,8 @@ class BrokerStatementProcessor:
                 account_id=pdf_result['account_id'],
                 cash_data=data.get('Cash', {}),
                 positions=position_list,
-                usd_total=usd_total
+                usd_total=usd_total,
+                statement_date=statement_date
             )
             
             # Position values will be calculated later in _optimize_cross_broker_pricing

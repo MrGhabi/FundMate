@@ -67,16 +67,19 @@ def infer_base_date_from_broker_folder(broker_folder: str, target_date: str) -> 
         # Find latest date < target_date
         target_dt = datetime.strptime(target_date, '%Y-%m-%d')
         valid_dates = [d for d in found_dates 
-                      if datetime.strptime(d, '%Y-%m-%d') < target_dt]
+                      if datetime.strptime(d, '%Y-%m-%d') <= target_dt]
         
         if not valid_dates:
             raise ValueError(
-                f"No base_date found before {target_date}. "
+                f"No base_date found on/before {target_date}. "
                 f"Found dates: {sorted(found_dates)}"
             )
         
         base_date = max(valid_dates)
-        logger.info(f"Base date inferred from archive files: {base_date} (from {len(valid_dates)} candidates)")
+        logger.info(
+            f"Base date inferred from archive files: {base_date} "
+            f"(selected from {len(valid_dates)} candidates <= {target_date})"
+        )
         return base_date
     
     raise ValueError(
@@ -155,17 +158,10 @@ Examples:
     )
     
     parser.add_argument(
-        '--base-date',
-        type=str,
-        default=None,
-        help='Base date for trade confirmation mode (YYYY-MM-DD). Auto-detect if not specified.'
-    )
-    
-    parser.add_argument(
         '--tc-folder',
         type=str,
-        default='data/archives/TradeConfirmation',
-        help='Trade confirmation folder path (default: data/archives/TradeConfirmation)'
+        default='data/archives/TC',
+        help='Trade confirmation folder path (default: data/archives/TC)'
     )
     
     return parser
@@ -195,19 +191,17 @@ def main():
         logger.info("Trade Confirmation Mode (End-to-End)")
         logger.info("=" * 60)
         
-        # Auto-infer base_date from broker_folder if not provided
-        if args.base_date is None:
-            try:
-                args.base_date = infer_base_date_from_broker_folder(
-                    args.broker_folder, 
-                    args.date
-                )
-            except ValueError as e:
-                logger.error(str(e))
-                sys.exit(1)
-        
+        try:
+            base_date = infer_base_date_from_broker_folder(
+                args.broker_folder, 
+                args.date
+            )
+        except ValueError as e:
+            logger.error(str(e))
+            sys.exit(1)
+    
         logger.info(f"Broker Folder: {args.broker_folder}")
-        logger.info(f"Base Date: {args.base_date}")
+        logger.info(f"Base Date: {base_date}")
         logger.info(f"Target Date: {args.date}")
         logger.info(f"TC Folder: {args.tc_folder}")
         
@@ -216,7 +210,7 @@ def main():
             tc_processor = TradeConfirmationProcessor()
             processed_results, exchange_rates, date = tc_processor.process_with_trade_confirmation(
                 base_broker_folder=args.broker_folder,
-                base_date=args.base_date,
+                base_date=base_date,
                 target_date=args.date,
                 tc_folder=args.tc_folder
             )
