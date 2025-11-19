@@ -109,7 +109,15 @@ class PDFProcessor:
         self.llm_handler = llm_handler
         self.base_output_dir = Path("out")
     
-    def process_pdf(self, pdf_path: Path, broker_name: str, account_id: str = None, force: bool = False) -> Dict:
+    def process_pdf(
+        self,
+        pdf_path: Path,
+        broker_name: str,
+        account_id: str = None,
+        force: bool = False,
+        output_date: Optional[str] = None,
+        output_account: Optional[str] = None
+    ) -> Dict:
         """Process a single PDF file."""
         if not pdf_path.exists():
             return {'status': 'error', 'error': f'PDF not found: {pdf_path}'}
@@ -123,7 +131,17 @@ class PDFProcessor:
         processed_path = None
         try:
             # Process PDF (decrypt + filter)
-            processed_path = self._process_pdf_file(pdf_path, broker_name, account_id, force)
+            processed_path = self._process_pdf_file(
+                pdf_path,
+                broker_name,
+                account_id,
+                force,
+                output_date=output_date,
+                output_account=output_account
+            )
+            final_account_id = output_account or account_id
+            if not final_account_id:
+                final_account_id = extract_account_id(pdf_path, broker_name)
             
             # Get prompt template
             prompt = PROMPT_TEMPLATES.get(broker_name.upper(), PROMPT_TEMPLATES.get('DEFAULT', []))
@@ -133,7 +151,7 @@ class PDFProcessor:
             
             return {
                 'broker_name': broker_name,
-                'account_id': account_id,
+                'account_id': final_account_id,
                 'status': 'success',
                 'data': result
             }
@@ -168,14 +186,27 @@ class PDFProcessor:
         
         return results
     
-    def _process_pdf_file(self, pdf_path: Path, broker_name: str, account_id: str, force: bool = False) -> Path:
+    def _process_pdf_file(
+        self,
+        pdf_path: Path,
+        broker_name: str,
+        account_id: str,
+        force: bool = False,
+        output_date: Optional[str] = None,
+        output_account: Optional[str] = None
+    ) -> Path:
         """Internal: decrypt and filter PDF if needed."""
         config = BROKER_CONFIG.get(broker_name.upper(), {})
         password = config.get('password')
         
+        # Determine final account identifier
+        if not account_id:
+            account_id = extract_account_id(pdf_path, broker_name)
+        final_account_id = output_account or account_id
+        
         # Check if processed file already exists (cache check)
-        date_folder = self._extract_date_from_path(pdf_path)
-        output_dir = self.base_output_dir / "pdfs" / date_folder / broker_name / account_id
+        date_folder = output_date or self._extract_date_from_path(pdf_path)
+        output_dir = self.base_output_dir / "pdfs" / date_folder / broker_name / final_account_id
         output_path = output_dir / f"{pdf_path.stem}_processed.pdf"
         
         if output_path.exists() and not force:

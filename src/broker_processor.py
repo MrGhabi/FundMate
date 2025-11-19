@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from loguru import logger
 import re
 
-from src.pdf_processor import PDFProcessor
+from src.pdf_processor import PDFProcessor, extract_account_id
 from src.excel_parser import ExcelPositionParser
 from src.price_fetcher import PriceFetcher, get_stock_price
 from src.utils import setup_logging, validate_date_format, print_asset_summary, get_option_multiplier
@@ -476,14 +476,20 @@ class BrokerStatementProcessor:
                         logger.warning(f"Expected filename pattern: {broker_name}_YYYY-MM-DD_*.pdf")
                     continue
                 
-                # 选择最接近 target_date 的文件
-                matched_date, pdf_file = max(dated_files, key=lambda x: x[0])
-                if matched_date != date:
-                    logger.info(
-                        f"{broker_name}: no {date} statement found; using nearest {matched_date}"
-                    )
-                pdf_files.append(pdf_file)
-                statement_date = matched_date
+                exact_matches = [(matched, pdf) for matched, pdf in dated_files if matched == date]
+                if exact_matches:
+                    selected_files = exact_matches
+                    if len(exact_matches) > 1:
+                        logger.info(f"{broker_name}: found {len(exact_matches)} archived PDFs for {date}")
+                else:
+                    nearest_date = max(dated_files, key=lambda x: x[0])[0]
+                    selected_files = [(matched, pdf) for matched, pdf in dated_files if matched == nearest_date]
+                    if nearest_date != date:
+                        logger.info(
+                            f"{broker_name}: no {date} statement found; using nearest {nearest_date} ({len(selected_files)} files)"
+                        )
+                for matched_date, pdf_file in selected_files:
+                    pdf_files.append((matched_date, pdf_file))
                     
             else:
                 # Statement模式：原有逻辑
@@ -498,28 +504,31 @@ class BrokerStatementProcessor:
                     search_paths.append(broker_dir)
 
                 # Find PDF files (support nested date folders)
+                discovered_files = []
                 for path in search_paths:
-                    pdf_files.extend(
+                    discovered_files.extend(
                         p for p in path.rglob("*.pdf")
                         if p.is_file() and "__MACOSX" not in p.parts
                     )
 
-                if not pdf_files:
+                if not discovered_files:
                     logger.info(f"No PDF files found for {broker_name}")
                     continue
-                statement_date = date
+                pdf_files.extend([(date, pdf) for pdf in discovered_files])
             
             logger.info(f"Found {len(pdf_files)} PDF files for {broker_name}")
             
             # Add each PDF file as a task
-            for pdf_file in pdf_files:
+            for statement_date, pdf_file in pdf_files:
+                account_override = extract_account_id(pdf_file, broker_name)
                 pdf_tasks.append({
                     'pdf_file': pdf_file,
                     'broker_name': broker_name,
                     'exchange_rates': exchange_rates,
                     'date': date,
                     'force': force,
-                    'statement_date': statement_date
+                    'statement_date': statement_date,
+                    'account_id_override': account_override
                 })
         
         if not pdf_tasks:
@@ -596,7 +605,15 @@ class BrokerStatementProcessor:
         
         try:
             # Process PDF with PDFProcessor
-            pdf_result = self.pdf_processor.process_pdf(pdf_file, broker_name, force=force)
+            override_account = task.get('account_id_override')
+            pdf_result = self.pdf_processor.process_pdf(
+                pdf_file,
+                broker_name,
+                account_id=override_account,
+                force=force,
+                output_date=statement_date,
+                output_account=override_account
+            )
             
             if pdf_result['status'] != 'success':
                 logger.error(f"PDF processing failed for {pdf_file.name}: {pdf_result.get('error', 'Unknown error')}")
@@ -604,6 +621,7 @@ class BrokerStatementProcessor:
             
             # Convert PDF result to ProcessedResult format
             data = pdf_result['data']
+            account_id = override_account or pdf_result.get('account_id')
             
             # Calculate USD total from cash data
             usd_total = self._calculate_usd_total(data.get('Cash', {}), exchange_rates)
@@ -634,7 +652,7 @@ class BrokerStatementProcessor:
             
             processed_result = ProcessedResult(
                 broker_name=broker_name,
-                account_id=pdf_result['account_id'],
+                account_id=account_id,
                 cash_data=data.get('Cash', {}),
                 positions=position_list,
                 usd_total=usd_total,
