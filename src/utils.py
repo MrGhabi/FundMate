@@ -246,7 +246,7 @@ def validate_broker_folder(folder_path: str) -> bool:
 
 
 def print_processing_info(broker_folder: str, date: str, broker: str = None, 
-                         output: str = None, force: bool = False) -> None:
+                         force: bool = False) -> None:
     """
     Print processing information banner.
     
@@ -254,7 +254,6 @@ def print_processing_info(broker_folder: str, date: str, broker: str = None,
         broker_folder: Path to broker folder
         date: Processing date
         broker: Specific broker filter (if any)
-        output: Output directory
         force: Force re-conversion flag
     """
     print("=" * 60)
@@ -263,55 +262,11 @@ def print_processing_info(broker_folder: str, date: str, broker: str = None,
     print(f"PDF Folder: {broker_folder}")
     print(f"Date: {date}")
     print(f"Broker: {broker if broker else 'All brokers'}")
-    print(f"Output: {output}")
     print(f"Force Re-conversion: {'Yes' if force else 'No'}")
     print("=" * 60)
     print()
 
 
-def check_images_exist(output_folder: str, broker_filter: str = None) -> Dict[str, bool]:
-    """
-    Check if images already exist for brokers.
-    
-    Args:
-        output_folder: Output directory for images
-        broker_filter: Specific broker to check (optional)
-        
-    Returns:
-        Dict[str, bool]: Mapping of broker names to existence status
-    """
-    output_path = Path(output_folder)
-    existing_images = {}
-    
-    if not output_path.exists():
-        # Create output directory if it doesn't exist
-        output_path.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Created output directory: {output_folder}")
-        return {}
-    
-    for broker_dir in output_path.iterdir():
-        if not broker_dir.is_dir():
-            continue
-            
-        broker_name = broker_dir.name
-        
-        # Filter by broker if specified
-        if broker_filter and broker_name.upper() != broker_filter.upper():
-            continue
-            
-        # Check for image files in broker directory
-        image_files = list(broker_dir.glob("*.png")) + list(broker_dir.glob("*.jpg"))
-        existing_images[broker_name] = len(image_files) > 0
-    
-    return existing_images
-
-
-def ensure_output_directories() -> None:
-    """
-    Ensure all required output directories exist.
-    Now uses centralized configuration.
-    """
-    settings.ensure_directories()
 
 
 def print_asset_summary(results: List["ProcessedResult"], date: str = None) -> None:

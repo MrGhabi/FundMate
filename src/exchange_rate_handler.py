@@ -190,34 +190,5 @@ class ExchangeRateHandler:
         except Exception as e:
             logger.warning(f"Failed to save to JSON cache: {e}")
 
-    def get_cache_stats(self) -> Dict[str, int]:
-        """Get statistics about cached rates"""
-        stats = {
-            'memory_cache_size': len(self._rate_cache),
-            'json_cache_size': 0
-        }
-        
-        if self.cache_file.exists():
-            try:
-                with open(self.cache_file, 'r') as f:
-                    cache_data = json.load(f)
-                stats['json_cache_size'] = len(cache_data)
-            except:
-                pass
-        
-        return stats
-
-    def clear_cache(self, memory_only: bool = False) -> None:
-        """Clear exchange rate cache"""
-        # Clear memory cache
-        self._rate_cache.clear()
-        logger.info("Cleared memory exchange rate cache")
-        
-        # Clear JSON cache if requested
-        if not memory_only and self.cache_file.exists():
-            self.cache_file.unlink()
-            logger.info("Cleared JSON exchange rate cache file")
-
-
 # Global instance for easy access
 exchange_handler = ExchangeRateHandler()

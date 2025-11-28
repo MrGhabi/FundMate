@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Gemini LLM Handler - Simplified Version
-Clean Gemini handler supporting both images and PDF processing
+Clean Gemini handler focused on direct PDF processing
 """
 
 import os
@@ -9,7 +9,7 @@ import base64
 import json
 import requests
 from dotenv import load_dotenv
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from loguru import logger
 
 
@@ -53,7 +53,7 @@ Critical Notes:
 class LLMHandler:
     """
     Simplified Gemini LLM Handler
-    Supports both image and PDF file processing
+    Handles broker PDF statements directly without image conversion
     """
     
     def __init__(self):
@@ -68,33 +68,25 @@ class LLMHandler:
         
         logger.info(f"Initialized Gemini LLMHandler: {self.model}")
     
-    def process_images_with_prompt(self, prompt: List[Dict[str, Any]], image_paths: List[str]) -> Dict[str, Any]:
-        """
-        Process image files, supports PNG/JPG formats
-        
-        Args:
-            prompt: Broker-specific prompt template
-            image_paths: List of image file paths
-            
-        Returns:
-            Dict: Parsed extraction results
-        """
-        return self._process_files(prompt, image_paths, "image")
-    
     def process_pdfs_with_prompt(self, prompt: List[Dict[str, Any]], pdf_paths: List[str]) -> Dict[str, Any]:
-        """
-        Process PDF files directly
-        
-        Args:
-            prompt: Broker-specific prompt template  
-            pdf_paths: List of PDF file paths
-            
-        Returns:
-            Dict: Parsed extraction results
-        """
-        return self._process_files(prompt, pdf_paths, "pdf")
+        """Backward compatible helper that uses the default system prompt."""
+        return self._process_files(prompt, pdf_paths, system_prompt=SYSTEM_PROMPT)
+
+    def process_files_with_prompt(
+        self,
+        prompt: List[Dict[str, Any]],
+        file_paths: List[str],
+        system_prompt: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Generalized entrypoint allowing custom system prompts/files."""
+        return self._process_files(prompt, file_paths, system_prompt=system_prompt or SYSTEM_PROMPT)
     
-    def _process_files(self, prompt: List[Dict[str, Any]], file_paths: List[str], file_type: str) -> Dict[str, Any]:
+    def _process_files(
+        self,
+        prompt: List[Dict[str, Any]],
+        file_paths: List[str],
+        system_prompt: str
+    ) -> Dict[str, Any]:
         """
         Unified file processing method with retry on JSON parse errors
         
@@ -104,28 +96,22 @@ class LLMHandler:
             file_type: File type ("image" or "pdf")
         """
         # Build user content
-        user_content = [{"type": "text", "text": SYSTEM_PROMPT}]
+        user_content = [{"type": "text", "text": system_prompt}]
         
         # Add broker-specific prompts
         for part in prompt:
             if part.get("type") == "text":
                 user_content.append({"type": "text", "text": part["text"]})
         
-        # Add files
+        # Add PDF files
         for file_path in file_paths:
             with open(file_path, "rb") as f:
                 file_data = base64.b64encode(f.read()).decode('utf-8')
             
-            if file_type == "pdf":
-                user_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:application/pdf;base64,{file_data}"}
-                })
-            else:  # image
-                user_content.append({
-                    "type": "image_url", 
-                    "image_url": {"url": f"data:image/png;base64,{file_data}"}
-                })
+            user_content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:application/pdf;base64,{file_data}"}
+            })
         
         # API call with retry logic (includes JSON parsing retry)
         payload = {

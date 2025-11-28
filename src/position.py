@@ -53,11 +53,6 @@ class Position:
     hk_numeric_code: Optional[str] = field(default=None, init=False)
     hkats_resolved: bool = field(default=False, init=False)
     
-    @property
-    def option_type_str(self) -> Optional[str]:
-        """Return option type as string for backward compatibility"""
-        return str(self.option_type) if self.option_type else None
-    
     def __post_init__(self):
         """Automatically parse option if detected"""
         self._parse_option_if_needed()

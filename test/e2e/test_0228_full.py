@@ -45,7 +45,6 @@ class TestE2E_0228:
         
         results, exchange_rates, date = processor.process_folder(
             broker_folder=broker_folder_0228,
-            image_output_folder=str(project_root_path / "out" / "pictures"),
             date=test_date_0228,
             broker=None,
             force=False,
@@ -106,4 +105,3 @@ class TestE2E_0228:
         print(f"Total:     ${actual_total:,.2f} (expected ${expected['grand_total']:,.2f})")
         print(f"Brokers:   {len(results)}")
         print(f"✅ All totals within {tolerance_percent}% tolerance")
-

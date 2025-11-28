@@ -259,17 +259,16 @@ class TradeConfirmationProcessor:
         logger.info("=" * 80)
         
         # Reprocess base statements from broker folder
-        from broker_processor import BrokerStatementProcessor
+        from src.broker_processor import BrokerStatementProcessor
         
         if base_results_override is not None and base_exchange_rates_override is not None:
             base_results = copy.deepcopy(base_results_override)
             base_exchange_rates = dict(base_exchange_rates_override)
         else:
-            from broker_processor import BrokerStatementProcessor
+            from src.broker_processor import BrokerStatementProcessor
             processor = BrokerStatementProcessor()
             base_results, base_exchange_rates, _ = processor.process_folder(
                 broker_folder=base_broker_folder,
-                image_output_folder=settings.pictures_dir,
                 date=base_date,
                 broker=None,
                 force=False,
@@ -286,7 +285,7 @@ class TradeConfirmationProcessor:
 
         broker_statement_dates: Dict[str, datetime] = {}
         for result in base_results:
-            broker_key = result.broker_name.strip().upper()
+            broker_key = self._canonical_broker_key(result.broker_name)
             stmt_str = result.statement_date or base_date
             try:
                 stmt_dt = datetime.strptime(stmt_str, '%Y-%m-%d')
@@ -332,9 +331,12 @@ class TradeConfirmationProcessor:
                 f"  4. TC files exist but contain no valid transaction rows"
             )
         
-        # Apply transactions to base results
+        # Aggregate by broker to avoid double-counting TC across multiple accounts
+        aggregated_results = self._aggregate_results_by_broker(base_results)
+
+        # Apply transactions to aggregated results
         updated_results = self._apply_transactions(
-            base_results,
+            aggregated_results,
             transactions,
             broker_statement_dates,
             target_date,
@@ -353,10 +355,69 @@ class TradeConfirmationProcessor:
         self._generate_update_report(
             base_date, target_date, transactions, updated_results
         )
-        
+
         logger.success(f"TC processing completed: {base_date} → {target_date}")
-        
+
         return updated_results, target_exchange_rates, target_date
+
+    def _aggregate_results_by_broker(self, base_results: List[ProcessedResult]) -> List[ProcessedResult]:
+        """
+        Merge multiple accounts of the same broker into a single aggregated result.
+        This avoids TC double-counting when the same broker has multiple statements.
+        """
+        aggregates: Dict[str, ProcessedResult] = {}
+
+        for res in base_results:
+            broker_key = self._canonical_broker_key(res.broker_name)
+            if broker_key not in aggregates:
+                # Deep copy to avoid mutating the original base result
+                cloned = copy.deepcopy(res)
+                cloned.account_id = cloned.account_id or "AGG"
+                cloned.broker_name = broker_key
+                aggregates[broker_key] = cloned
+            else:
+                agg = aggregates[broker_key]
+
+                # Merge cash buckets: numeric fields sum, non-numeric keep first non-null
+                for cur, val in res.cash_data.items():
+                    if isinstance(val, (int, float)) or cur.upper() in {"CNY", "HKD", "USD", "TOTAL"}:
+                        agg.cash_data[cur] = (agg.cash_data.get(cur, 0) or 0) + (val or 0)
+                    else:
+                        if cur not in agg.cash_data or agg.cash_data[cur] is None:
+                            agg.cash_data[cur] = val
+
+                # Merge positions by stock_code (option matching kept simple to avoid over-aggregation)
+                for pos in res.positions:
+                    merged = False
+                    for existing in agg.positions:
+                        if existing.stock_code == pos.stock_code:
+                            existing.holding = self._normalize_holding(existing.holding) + self._normalize_holding(pos.holding)
+                            merged = True
+                            break
+                    if not merged:
+                        agg.positions.append(copy.deepcopy(pos))
+
+                # Merge USD totals and position values
+                agg.usd_total = (agg.usd_total or 0) + (res.usd_total or 0)
+                if res.position_values:
+                    agg.position_values.update(res.position_values)
+
+                # Keep the earliest statement_date as conservative baseline
+                agg.statement_date = self._choose_earlier_date(agg.statement_date, res.statement_date)
+
+        return list(aggregates.values())
+
+    def _choose_earlier_date(self, d1: Optional[str], d2: Optional[str]) -> Optional[str]:
+        if not d1:
+            return d2
+        if not d2:
+            return d1
+        try:
+            dt1 = datetime.strptime(d1, '%Y-%m-%d')
+            dt2 = datetime.strptime(d2, '%Y-%m-%d')
+            return d1 if dt1 <= dt2 else d2
+        except Exception:
+            return d1
     
     def _parse_trade_confirmations(
         self, 
@@ -378,6 +439,7 @@ class TradeConfirmationProcessor:
         """
         folder = Path(tc_folder)
         transactions = []
+        seen_hashes = set()
         
         if not folder.exists():
             logger.warning(f"TC folder does not exist: {tc_folder}")
@@ -401,6 +463,12 @@ class TradeConfirmationProcessor:
         
         all_transactions = []
         for tc_file in tc_files:
+            file_hash = self._file_sha256(tc_file)
+            if file_hash in seen_hashes:
+                logger.warning(f"Skipping duplicate TC file (hash match): {tc_file.name}")
+                continue
+            seen_hashes.add(file_hash)
+
             logger.info(f"Processing TC file: {tc_file.name}")
             
             # Parse Excel file (now uses Trade Date from Excel)
@@ -431,6 +499,14 @@ class TradeConfirmationProcessor:
         )
         
         return transactions
+
+    def _file_sha256(self, path: Path) -> str:
+        import hashlib
+        h = hashlib.sha256()
+        with path.open('rb') as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return h.hexdigest()
     
     def _extract_date_from_tc_filename(self, filename: str) -> str:
         """
@@ -623,57 +699,57 @@ class TradeConfirmationProcessor:
         target_dt = datetime.strptime(target_date, '%Y-%m-%d')
         fallback_dt = datetime.strptime(fallback_base_date, '%Y-%m-%d')
         inclusive_start_brokers = {'LB'}
-        
+
         # Group transactions by broker (case-insensitive)
-        broker_txns = {}
+        broker_txns: Dict[str, List[Transaction]] = {}
         for txn in transactions:
-            broker_key = txn.broker.strip().upper()  # Normalize to uppercase
-            if broker_key not in broker_txns:
-                broker_txns[broker_key] = []
-            broker_txns[broker_key].append(txn)
-        
-        # Apply transactions to each broker (case-insensitive matching)
+            broker_key = self._canonical_broker_key(txn.broker)
+            broker_txns.setdefault(broker_key, []).append(txn)
+
         for result in base_results:
-            broker_key = result.broker_name.strip().upper()  # Normalize to uppercase
-            
-            if broker_key in broker_txns:
-                txns = broker_txns[broker_key]
-                statement_dt = broker_statement_dates.get(broker_key, fallback_dt)
-                if statement_dt > target_dt:
-                    logger.warning(
-                        f"Skipping TC for {result.broker_name}: statement date "
-                        f"{statement_dt.date()} is after target date {target_date}"
-                    )
-                    continue
+            broker_key = self._canonical_broker_key(result.broker_name)
+            if broker_key not in broker_txns:
+                logger.debug(f"No transactions for {broker_key}")
+                continue
 
-                inclusive_start = broker_key in inclusive_start_brokers
-                filtered_txns = []
-                for txn in txns:
-                    txn_dt = datetime.strptime(txn.date, '%Y-%m-%d')
-                    if inclusive_start:
-                        in_range = statement_dt <= txn_dt <= target_dt
-                    else:
-                        in_range = statement_dt < txn_dt <= target_dt
-                    if in_range:
-                        filtered_txns.append(txn)
-
-                if not filtered_txns:
-                    logger.debug(
-                        f"No eligible transactions for {result.broker_name} "
-                        f"after filtering by statement date {statement_dt.date()}"
-                    )
-                    continue
-
-                logger.info(
-                    f"Applying {len(filtered_txns)} transactions to {result.broker_name} "
-                    f"(range {'[' if inclusive_start else '('}"
-                    f"{statement_dt.strftime('%Y-%m-%d')}, {target_date}])"
+            txns = broker_txns[broker_key]
+            statement_dt = broker_statement_dates.get(broker_key, fallback_dt)
+            if statement_dt > target_dt:
+                logger.warning(
+                    f"Skipping TC for {broker_key}: statement date "
+                    f"{statement_dt.date()} is after target date {target_date}"
                 )
-                self._apply_broker_transactions(result, filtered_txns)
-            else:
-                logger.debug(f"No transactions for {result.broker_name}")
-        
+                continue
+
+            inclusive_start = broker_key in inclusive_start_brokers
+            filtered_txns = []
+            for txn in txns:
+                txn_dt = datetime.strptime(txn.date, '%Y-%m-%d')
+                if inclusive_start:
+                    in_range = statement_dt <= txn_dt <= target_dt
+                else:
+                    in_range = statement_dt < txn_dt <= target_dt
+                if in_range:
+                    filtered_txns.append(txn)
+
+            if not filtered_txns:
+                logger.debug(
+                    f"No eligible transactions for {broker_key} "
+                    f"after filtering by statement date {statement_dt.date()}"
+                )
+                continue
+
+            logger.info(
+                f"Applying {len(filtered_txns)} transactions to {result.broker_name} "
+                f"(range {'[' if inclusive_start else '('}"
+                f"{statement_dt.strftime('%Y-%m-%d')}, {target_date}])"
+            )
+            self._apply_broker_transactions(result, filtered_txns)
+
         return base_results
+
+    def _canonical_broker_key(self, broker_name: str) -> str:
+        return broker_name.split('/')[0].strip().upper()
     
     def _apply_broker_transactions(
         self, 
@@ -707,6 +783,8 @@ class TradeConfirmationProcessor:
                     f"Supported directions: BUY, BUYCOVER, SELL, SELLSHORT\n"
                     f"Please check the 'BUY/SELL' column in the TC file."
                 )
+
+        self._remove_zero_positions(result)
     
     def _apply_buy(self, result: ProcessedResult, txn: Transaction):
         """
@@ -840,24 +918,19 @@ class TradeConfirmationProcessor:
             if pos_normalized == normalized_code:
                 return pos_obj
 
-        if target.option_format:
-            for pos in positions:
-                if pos.option_format and target.matches_option(pos):
-                    logger.debug(
-                        f"Fuzzy matched option: '{stock_code}' → '{pos.stock_code}' "
-                        f"({target.underlying} {target.strike} {target.option_type})"
-                    )
-                    return pos
-
-        for pos in positions:
-            pos_obj = self._ensure_position_object(pos, broker_name)
-            pos_normalized = self.standardize_option_format(
-                self._normalize_equity_code(pos_obj.stock_code)
-            )
-            if pos_normalized == normalized_code:
-                return pos_obj
-
         return None
+
+    def _remove_zero_positions(self, result: ProcessedResult) -> None:
+        before = len(result.positions)
+        result.positions = [
+            pos for pos in result.positions
+            if abs(self._normalize_holding(pos.holding)) >= 1e-9
+        ]
+        removed = before - len(result.positions)
+        if removed:
+            logger.debug(
+                f"  Removed {removed} zero-holding positions for {result.broker_name}"
+            )
     
     @staticmethod
     def _normalize_holding(value):
@@ -1016,24 +1089,3 @@ class TradeConfirmationProcessor:
                 logger.warning(f"  - {symbol}")
         
         logger.info("=" * 60)
-
-
-def auto_detect_latest_base_date() -> str:
-    """
-    Auto-detect the latest available base date from saved portfolios.
-    
-    Returns:
-        Latest date string in YYYY-MM-DD format
-    """
-    persistence = DataPersistence()
-    available_dates = persistence.get_available_dates()
-    
-    if not available_dates:
-        raise ValueError(
-            "No base portfolio found. Please run normal mode first to "
-            "generate a base portfolio."
-        )
-    
-    latest_date = available_dates[-1]  # List is sorted
-    logger.info(f"Auto-detected latest base date: {latest_date}")
-    return latest_date

@@ -9,7 +9,7 @@
     <div class="section">
         <h3 class="section-title">What is FundMate?</h3>
         <p>FundMate is a production-ready financial data processor that extracts cash holdings and position data from broker statements using LLM-powered data extraction.</p>
-        <p>It processes both PDF statements (image-based) and Excel files (structured data) from 12+ different brokers, providing real-time asset valuation with market prices.</p>
+        <p>It processes broker PDF statements and Excel files from 12+ different brokers, providing real-time asset valuation with market prices.</p>
     </div>
 
     <div class="section">
@@ -56,7 +56,7 @@
                 <strong>Data Processing:</strong> Pandas, PyArrow (Parquet)
             </div>
             <div class="tech-item">
-                <strong>PDF Processing:</strong> pdfplumber, pdf2image
+                <strong>PDF Processing:</strong> pypdf, Gemini LLM pipeline
             </div>
             <div class="tech-item">
                 <strong>Market Data:</strong> Futu OpenD API, akshare
@@ -75,7 +75,7 @@ Input PDFs/Excel
     ↓
 PDF Processing (Decryption, Page Filtering)
     ↓
-LLM Extraction (Structured Data from Images)
+LLM Extraction (Structured Data from PDFs)
     ↓
 Price Fetching (Real-time Market Prices)
     ↓

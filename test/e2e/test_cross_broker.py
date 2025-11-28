@@ -31,7 +31,6 @@ class TestCrossBrokerAggregation:
         
         results, exchange_rates, date = processor.process_folder(
             broker_folder=broker_folder_0228,
-            image_output_folder=str(project_root_path / "out" / "pictures"),
             date=test_date_0228,
             broker=None,
             force=False,

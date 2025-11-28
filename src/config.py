@@ -28,17 +28,6 @@ class Settings:
     # Futu OpenD configuration
     FUTU_HOST = os.getenv('FUTU_HOST', '127.0.0.1')
     FUTU_PORT = int(os.getenv('FUTU_PORT', '11111'))
-    FUTU_TIMEOUT = int(os.getenv('FUTU_TIMEOUT', '30'))
-    
-    # Processing defaults
-    DEFAULT_MAX_WORKERS = 3
-    DEFAULT_DPI = 300
-    DEFAULT_IMAGE_FORMAT = 'png'
-    
-    @property
-    def pictures_dir(self) -> str:
-        """Output directory for converted images"""
-        return f"{self.OUTPUT_DIR}/pictures"
     
     @property
     def result_dir(self) -> str:
@@ -47,7 +36,7 @@ class Settings:
     
     def ensure_directories(self) -> None:
         """Create necessary directories if they don't exist"""
-        for dir_path in [self.OUTPUT_DIR, self.LOG_DIR, self.pictures_dir, self.result_dir]:
+        for dir_path in [self.OUTPUT_DIR, self.LOG_DIR, self.result_dir]:
             Path(dir_path).mkdir(parents=True, exist_ok=True)
     
     def get_exchange_url(self, from_currency: str, to_currency: str, amount: int = 1, date: str = None) -> str:

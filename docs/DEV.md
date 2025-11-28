@@ -41,7 +41,7 @@ Proxy note: some environments require unsetting `HTTP(S)_PROXY` for local servic
 ├── docs/DEV.md           # (this file)
 ├── log/                  # Processing logs (per date)
 ├── out/
-│   ├── pictures/DATE/    # PDF-to-image conversion
+│   ├── pdfs/BROKER/      # decrypted/filtered PDFs cached per broker
 │   └── result/DATE/      # cash/positions parquet + CSV + metadata
 ├── src/                  # Application source
 │   └── webapp/           # Flask UI (templates/static packaged here)
@@ -59,6 +59,8 @@ Archive mode (recommended):
 python -m src.main data/archives --date 2025-02-28
 python -m src.main data/archives --date 2025-02-28 --broker IB
 python -m src.main data/archives --date 2025-02-28 -f --max-workers 8
+# 未通过 `pip install -e .` 安装时，需加 `PYTHONPATH=src` 避免 ModuleNotFoundError：
+# PYTHONPATH=src python -m src.main data/archives --date 2025-02-28
 ```
 
 Statement mode (legacy date folders):
@@ -68,8 +70,7 @@ python -m src.main data/20250228_Statement --date 2025-02-28 --broker IB
 ```
 
 Key options:
-- `--output DIR` – custom image output directory (default `./out/pictures`)
-- `-f/--force` – reconvert PDFs even if images already exist
+- `-f/--force` – re-process PDFs even if processed files already exist
 - `--max-workers N` – tune concurrency per hardware
 
 ## 5. Trade Confirmation Mode
@@ -78,10 +79,10 @@ Enable incremental updates when broker statements lag:
 
 ```bash
 python -m src.main data/archives --date 2025-07-22 --use-tc
-python -m src.main data/archives --date 2025-07-22 --use-tc --base-date 2025-07-18
 python -m src.main data/archives --date 2025-07-22 --use-tc \
-  --base-date 2025-07-18 \
   --tc-folder data/archives/TC
+# 同理，未执行可编辑安装时请加前缀：
+# PYTHONPATH=src python -m src.main data/archives --date 2025-07-22 --use-tc
 ```
 
 How it works:
@@ -163,6 +164,28 @@ Features:
 - Scans every `data/*_Statement/` directory.
 - Copies files into `data/archives/{BROKER}/`, renaming to `{BROKER}_{YYYY-MM-DD}_{ACCOUNT_ID}.{ext}`.
 - Extracts account IDs across broker formats and generates a summary report.
+
+### 10.1 Metadata-based preprocessing (RAR/ZIP uploads)
+
+For ad-hoc bundles (RAR/ZIP) that are already grouped by broker/date, use the metadata tools under `src/metadata`:
+
+```bash
+# 1) Extract the archive into a temp directory (avoid deleting originals).
+unrar x temp/20250807\ Statement.rar temp/20250807_statement_extract
+
+# 2) Generate JSONL metadata (PDF via LLM, Excel via structured parsers).
+python -m src.metadata.detector temp/20250807_statement_extract --output temp/metadata_20250807.jsonl
+
+# 3) Organize into data/archives with hash-based dedupe (SHA-256 per broker).
+python -m src.metadata.organizer temp/metadata_20250807.jsonl --output data/archives
+```
+
+- Deduplication: organizer computes SHA-256 against existing broker files; identical content for the same broker/date is skipped, hash conflicts are reported.
+- Excel routing: filename hints (`ms|morgan|gs|goldman|tenfund|optiondaily|trade confirmation`) pick a parser, then the extractor will fall back to try all parsers before giving up, so content is still inspected when filenames are non-standard.
+- TC Excel: tagged as broker `TC` with date inferred from filename or sheet content; account may remain `UNKNOWN` unless the sheet carries it.
+- PDF decryption: metadata detector auto-decrypts PDFs using `pdf_processor.BROKER_CONFIG` passwords (writes a temp decrypted copy for LLM), so encrypted PDFs won’t be mis-identified as separate accounts. Keep encrypted originals if needed for audit, but store readable copies in `data/archives`.
+- TC file dedupe: TC parsing now SHA-256 de-duplicates identical TC-*.xlsx files and warns when skipping duplicates, preventing double application of the same trades.
+- Archive hygiene: if both encrypted and decrypted versions of the same account/date exist, keep the readable version in `data/archives` and move the encrypted duplicate to `temp/null/` to avoid multi-account duplication.
 
 ## 11. Known Limitations & Tips
 

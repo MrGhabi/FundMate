@@ -45,7 +45,6 @@ class TestE2E_0630:
         
         results, exchange_rates, date = processor.process_folder(
             broker_folder=broker_folder_0630,
-            image_output_folder=str(project_root_path / "out" / "pictures"),
             date=test_date_0630,
             broker=None,
             force=False,

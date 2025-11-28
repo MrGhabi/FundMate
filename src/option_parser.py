@@ -24,7 +24,6 @@ class ParsedOption:
     Uses OptionType enum for type safety.
     """
     format_type: str  # 'US_OCC' / 'HK_HKATS' / 'OTC' / 'UNPARSEABLE'
-    original_code: str
     
     # Core option fields (None for non-options or unparseable)
     underlying: Optional[str] = None  # Ticker or HKATS code
@@ -40,10 +39,6 @@ class ParsedOption:
     hk_numeric_code: Optional[str] = None
     hkats_resolved: bool = False
     
-    @property
-    def option_type_str(self) -> Optional[str]:
-        """Return option type as string for backward compatibility"""
-        return str(self.option_type) if self.option_type else None
 
 
 class OptionParser(ABC):
@@ -123,8 +118,7 @@ class ParserRegistry:
         
         # No parser succeeded
         return ParsedOption(
-            format_type='UNPARSEABLE',
-            original_code=code
+            format_type='UNPARSEABLE'
         )
 
 
@@ -156,7 +150,6 @@ class OTCParser(OptionParser):
         
         return ParsedOption(
             format_type='OTC',
-            original_code=code,
             multiplier=1,  # OTC multiplier usually from broker
             currency=currency
         )
@@ -192,7 +185,6 @@ class USOCCParser(OptionParser):
         
         return ParsedOption(
             format_type='US_OCC',
-            original_code=code,
             underlying=ticker,
             expiry_date=expiry,
             strike=int(strike_int) / 1000.0,
@@ -237,7 +229,6 @@ class HKHKATSParser(OptionParser):
             
             return ParsedOption(
                 format_type='HK_HKATS',
-                original_code=code,
                 underlying=hkats,
                 expiry_date=expiry,
                 strike=float(strike),
@@ -255,7 +246,6 @@ class HKHKATSParser(OptionParser):
             
             return ParsedOption(
                 format_type='HK_HKATS',
-                original_code=code,
                 underlying=hkats,
                 expiry_date=expiry,
                 strike=float(strike),
@@ -294,7 +284,6 @@ class USLongFormatParser(OptionParser):
         
         return ParsedOption(
             format_type='US_OCC',
-            original_code=code,
             underlying=ticker,
             expiry_date=expiry,
             strike=float(strike),
@@ -352,7 +341,6 @@ class HKNumericParser(OptionParser):
             
             return ParsedOption(
                 format_type='HK_HKATS',
-                original_code=code,
                 underlying=hkats_code if hkats_code else numeric,
                 expiry_date=expiry,
                 strike=strike_float,
@@ -385,7 +373,6 @@ class HKNumericParser(OptionParser):
             
             return ParsedOption(
                 format_type='HK_HKATS',
-                original_code=code,
                 underlying=hkats_code if hkats_code else numeric,
                 expiry_date=expiry,
                 strike=strike_float,

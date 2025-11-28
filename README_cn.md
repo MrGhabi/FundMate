@@ -26,9 +26,12 @@ pip install -e .[web]     # 仅在需要 Flask UI 时执行
 
 # 2. 处理对账单（推荐 archives 目录）
 python -m src.main data/archives --date 2025-02-28
+# 若未执行 `pip install -e .`，请加前缀避免导入错误：
+# PYTHONPATH=src python -m src.main data/archives --date 2025-02-28
 
-# 3. 使用交易确认书做增量
-python -m src.main data/archives --date 2025-07-22 --use-tc --base-date 2025-07-18
+python -m src.main data/archives --date 2025-07-22 --use-tc
+# 未安装为可编辑包时同样需加前缀：
+# PYTHONPATH=src python -m src.main data/archives --date 2025-07-22 --use-tc
 
 # 4. 测试
 sh test/run_tests.sh                                   # 全量回归（需 Gemini + Futu）

@@ -28,7 +28,7 @@ pip install -e .[web]    # only if you need the Flask UI
 python -m src.main data/archives --date 2025-02-28
 
 # 3. Incremental update via trade confirmations
-python -m src.main data/archives --date 2025-07-22 --use-tc --base-date 2025-07-18
+python -m src.main data/archives --date 2025-07-22 --use-tc 
 
 # 4. Tests
 sh test/run_tests.sh                                  # full regression (needs Gemini + Futu)

@@ -10,12 +10,9 @@ from loguru import logger
 
 from src.broker_processor import BrokerStatementProcessor
 from src.data_persistence import save_processing_results
-from src.utils import validate_broker_folder, print_processing_info, ensure_output_directories
+from src.utils import validate_broker_folder, print_processing_info
 from src.config import settings
-from src.trade_confirmation_processor import (
-    TradeConfirmationProcessor, 
-    auto_detect_latest_base_date
-)
+from src.trade_confirmation_processor import TradeConfirmationProcessor
 
 
 def infer_base_date_from_broker_folder(broker_folder: str, target_date: str) -> str:
@@ -131,16 +128,9 @@ Examples:
     )
     
     parser.add_argument(
-        '--output',
-        type=str,
-        default=None,
-        help='Output folder for converted images (default: ./out/pictures)'
-    )
-    
-    parser.add_argument(
         '-f', '--force',
         action='store_true',
-        help='Force re-conversion of PDFs even if images already exist'
+        help='Force re-processing of PDFs even if cached outputs already exist'
     )
     
     parser.add_argument(
@@ -177,14 +167,12 @@ def main():
     args = parser.parse_args()
     
     # Setup configuration and ensure directories
-    if args.output is None:
-        args.output = settings.pictures_dir
     settings.ensure_directories()
     
     # Check if using Trade Confirmation mode
     if args.use_tc:
         # Initialize logging to target date (not base date)
-        from utils import setup_logging
+        from src.utils import setup_logging
         setup_logging(settings.LOG_DIR, args.date)
         
         logger.info("=" * 60)
@@ -234,7 +222,6 @@ def main():
             broker_folder=args.broker_folder,
             date=args.date,
             broker=args.broker,
-            output=args.output,
             force=args.force
         )
         
@@ -243,7 +230,6 @@ def main():
             processor = BrokerStatementProcessor()
             processed_results, exchange_rates, date = processor.process_folder(
                 broker_folder=args.broker_folder,
-                image_output_folder=args.output,
                 date=args.date,
                 broker=args.broker,
                 force=args.force,

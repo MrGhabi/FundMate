@@ -202,7 +202,7 @@ def get_stock_price(symbol: str, date: str, source: str = None, raw_description:
         return (price, currency) if price else (None, None)
 
 
-def calculate_portfolio_value(holdings, date: str, source: str = None, exchange_rates: dict = None, image_processor=None):
+def calculate_portfolio_value(holdings, date: str, source: str = None, exchange_rates: dict = None):
     """
     Calculate total portfolio value
     
@@ -286,17 +286,18 @@ def calculate_portfolio_value(holdings, date: str, source: str = None, exchange_
         
         # Convert individual position value to USD for portfolio total
         if price_currency != 'USD' and value > 0:
-            if image_processor:
-                # Lazy loading: fetch rate only when needed
-                rate = exchange_handler.get_rate_lazy(price_currency, 'USD', date)
-                usd_value = value * rate  # Direct multiplication since rate is from_currency→USD
-            elif exchange_rates:
-                # Fallback to old method if exchange_rates provided
+            if exchange_rates and price_currency in exchange_rates:
+                # Legacy branch retains original division logic for backward compatibility
                 rate = exchange_rates.get(price_currency, 1.0)
-                usd_value = value / rate  # Division for USD-based rates
+                usd_value = value / rate
             else:
-                logger.warning(f"No exchange rate source available for {price_currency}, using original value")
-                usd_value = value
+                try:
+                    rate = exchange_handler.get_rate_lazy(price_currency, 'USD', date)
+                    usd_value = value * rate
+                except Exception as e:
+                    logger.warning(f"No exchange rate source available for {price_currency}: {e}")
+                    logger.warning("Falling back to original currency value")
+                    usd_value = value
         else:
             usd_value = value
         
@@ -333,7 +334,7 @@ def calculate_portfolio_value(holdings, date: str, source: str = None, exchange_
 class PriceFetcher:
     """Thin wrapper for legacy compatibility"""
     
-    def calculate_position_values(self, positions, date: str, exchange_rates: dict = None, image_processor=None):
+    def calculate_position_values(self, positions, date: str, exchange_rates: dict = None):
         """Legacy interface adapter (supports both dict and Position objects)"""
         # Preserve RawDescription when converting to holdings format
         holdings = []
@@ -363,7 +364,7 @@ class PriceFetcher:
                     holding['Multiplier'] = p['Multiplier']
             holdings.append(holding)
         
-        result = calculate_portfolio_value(holdings, date, exchange_rates=exchange_rates, image_processor=image_processor)
+        result = calculate_portfolio_value(holdings, date, exchange_rates=exchange_rates)
         
         # Convert to legacy format
         valued_positions = []

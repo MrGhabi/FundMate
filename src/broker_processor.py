@@ -70,7 +70,7 @@ class ProcessedResult:
 class BrokerStatementProcessor:
     """
     Core processor for broker statement data extraction and processing.
-    Orchestrates PDF conversion, image processing, and data extraction workflow.
+    Orchestrates the direct PDF parsing workflow (no image conversion stage).
     """
     
     def __init__(self):
@@ -80,25 +80,23 @@ class BrokerStatementProcessor:
         self.excel_parser = ExcelPositionParser()
         self.price_fetcher = PriceFetcher()
     
-    def process_folder(self, broker_folder: str, image_output_folder: str, 
-                      date: str = None, broker: str = None, force: bool = False, 
+    def process_folder(self, broker_folder: str, date: str = None, broker: str = None, force: bool = False, 
                       max_workers: int = 10, skip_logging_setup: bool = False) -> Tuple[Optional[List], Optional[dict], Optional[str]]:
         """
         Process broker folder with complete workflow:
         1. Validate date format
         2. Setup logging
-        3. Check existing images
-        4. Convert PDFs to images
-        5. Get exchange rates
-        6. Process images and extract data
+        3. Fetch exchange rates
+        4. Process PDFs directly (decrypt/filter) and extract data
+        5. Process Excel statements when present
+        6. Merge and optimize pricing results
         7. Generate summary report
         
         Args:
             broker_folder: Path to folder containing broker PDF statements
-            image_output_folder: Output folder for converted images
             date: Date string in YYYY-MM-DD format
             broker: Specific broker to process, or None for all
-            force: Force re-conversion of PDFs even if images exist
+            force: Force re-processing of PDFs even if cached files exist
             max_workers: Maximum number of concurrent threads
             skip_logging_setup: If True, skip logging setup (used by TC mode)
             
@@ -145,7 +143,7 @@ class BrokerStatementProcessor:
         
         # Step 11: Process Excel data from broker folder
         logger.info("Processing Excel data...")
-        excel_results = self._process_excel_data(broker_folder, date, exchange_rates, broker)
+        excel_results = self._process_excel_data(broker_folder, date, broker)
         
         # Step 12: Merge PDF and Excel results
         merged_results = self._merge_position_data(pdf_results, excel_results)
@@ -164,7 +162,7 @@ class BrokerStatementProcessor:
         # Return results for persistence
         return merged_results, exchange_rates, date
     
-    def _process_excel_data(self, broker_folder: str, date: str, exchange_rates: dict, broker_filter: str = None) -> List[ProcessedResult]:
+    def _process_excel_data(self, broker_folder: str, date: str, broker_filter: str = None) -> List[ProcessedResult]:
         """
         Process Excel position data from broker folder.
         
@@ -528,7 +526,8 @@ class BrokerStatementProcessor:
                     'date': date,
                     'force': force,
                     'statement_date': statement_date,
-                    'account_id_override': account_override
+                    'account_id_override': account_override,
+                    'output_filename': pdf_file.name
                 })
         
         if not pdf_tasks:
@@ -611,8 +610,7 @@ class BrokerStatementProcessor:
                 broker_name,
                 account_id=override_account,
                 force=force,
-                output_date=statement_date,
-                output_account=override_account
+                output_filename=task.get('output_filename')
             )
             
             if pdf_result['status'] != 'success':

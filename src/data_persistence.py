@@ -187,6 +187,10 @@ class DataPersistence:
                     holding_value = int(holding_value.replace(',', ''))
                 else:
                     holding_value = int(holding_value)
+
+                # Skip zero-holding positions to avoid noisy rows
+                if holding_value == 0:
+                    continue
                 
                 # Calculate USD value using the same logic as print_asset_summary
                 position_value_usd = None
