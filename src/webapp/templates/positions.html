@@ -29,42 +29,104 @@
     <div class="summary-bar">
         <div class="summary-item">
             <span class="label">Total Positions:</span>
-            <span class="value" id="position-count">{{ positions | length }}</span>
+            <span class="value" id="position-count">{{ aggregated_positions | length }}</span>
         </div>
         <div class="summary-item">
-            <span class="label">Total Holdings:</span>
-            <span class="value" id="total-holdings">
-                {{ positions | sum(attribute='holding') | int if positions else 0 }}
+            <span class="label">Total Position Value (USD):</span>
+            <span class="value" id="total-value">
+                {% set total_val = aggregated_positions | sum(attribute='total_value_usd') if aggregated_positions else 0 %}
+                {{ total_val | format_currency('USD') }}
             </span>
         </div>
     </div>
 
-    <!-- Positions Table -->
+    <!-- Positions Table (Aggregated) -->
     <div class="section">
+        <div class="actions" style="margin-bottom: 8px;">
+            <button class="btn btn-secondary" onclick="expandAll()">Expand All</button>
+            <button class="btn btn-secondary" onclick="collapseAll()">Collapse All</button>
+        </div>
         <table class="data-table" id="positions-table">
             <thead>
                 <tr>
-                    <th onclick="sortTable(0)">Stock Code ↕</th>
-                    <th onclick="sortTable(1)">Broker ↕</th>
-                    <th onclick="sortTable(2)">Account ID ↕</th>
-                    <th class="text-right" onclick="sortTable(3)">Holding ↕</th>
-                    <th>Date</th>
+                    <th></th>
+                    <th onclick="sortTable(1)">Stock Code ↕</th>
+                    <th>Description</th>
+                    <th class="text-right" onclick="sortTable(3)">Total Holding ↕</th>
+                    <th class="text-right" onclick="sortTable(4)">Total Value (USD) ↕</th>
+                    <th class="text-right">Price</th>
+                    <th>Price Source</th>
+                    <th class="text-right" onclick="sortTable(7)">Broker Count ↕</th>
                 </tr>
             </thead>
             <tbody>
-                {% for pos in positions %}
-                <tr>
-                    <td><strong>{{ pos.stock_code or pos.symbol or 'N/A' }}</strong></td>
-                    <td><span class="badge badge-{{ (pos.broker_name or pos.broker or 'default') | lower }}">{{ pos.broker_name or pos.broker }}</span></td>
-                    <td>{{ pos.account_id or 'N/A' }}</td>
-                    <td class="text-right">{{ pos.holding or pos.quantity or 0 }}</td>
-                    <td>{{ pos.date or 'N/A' }}</td>
+                {% for agg in aggregated_positions %}
+                <tr class="summary-row" data-key="{{ agg.key }}" data-holding="{{ agg.total_holding }}" data-value="{{ agg.total_value_usd or 0 }}">
+                    <td><button class="btn btn-link" onclick="toggleRow('{{ agg.key }}')" aria-label="toggle">+</button></td>
+                    <td><strong>{{ agg.symbol or 'N/A' }}</strong></td>
+                    <td class="description">{{ agg.description or 'N/A' }}</td>
+                    <td class="text-right">{{ agg.total_holding | format_number }}</td>
+                    <td class="text-right">
+                        {% if agg.total_value_usd is not none %}
+                        {{ agg.total_value_usd | format_currency('USD') }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="text-right">
+                        {% if agg.display_price %}{{ agg.display_price }} {{ agg.display_price_currency or '' }}{% else %}—{% endif %}
+                    </td>
+                    <td>
+                        {% if agg.price_source %}
+                        {% set source_class = 'badge-source-' + agg.price_source|lower %}
+                        <span class="badge {{ source_class }}">{{ agg.price_source }}</span>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="text-right">{{ agg.broker_count }}</td>
+                </tr>
+                <tr class="detail-row" id="detail-{{ agg.key }}" style="display:none;">
+                    <td></td>
+                    <td colspan="7">
+                        <table class="data-table inner-table">
+                            <thead>
+                                <tr>
+                                    <th>Broker</th>
+                                    <th>Account</th>
+                                    <th class="text-right">Holding</th>
+                                    <th class="text-right">Price</th>
+                                    <th>Price Source</th>
+                                    <th class="text-right">Value (USD)</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for child in agg.children %}
+                                <tr>
+                                    <td><span class="badge badge-{{ (child.broker_name or 'default') | lower }}">{{ child.broker_name }}</span></td>
+                                    <td>{{ child.account_id or 'N/A' }}</td>
+                                    <td class="text-right">{{ child.holding | format_number }}</td>
+                                    <td class="text-right">
+                                        {% if child.final_price %}{{ child.final_price }} {{ child.price_currency or '' }}{% else %}—{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if child.final_price_source %}
+                                        {% set child_class = 'badge-source-' + child.final_price_source|lower %}
+                                        <span class="badge {{ child_class }}">{{ child.final_price_source }}</span>
+                                        {% else %}—{% endif %}
+                                    </td>
+                                    <td class="text-right">
+                                        {% if child.position_value_usd %}{{ child.position_value_usd | format_currency('USD') }}{% else %}—{% endif %}
+                                    </td>
+                                    <td>{{ child.date or 'N/A' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
 
-        {% if not positions %}
+        {% if not aggregated_positions %}
         <div class="empty-state">
             <p>No positions found for the selected filters.</p>
         </div>
@@ -91,55 +153,64 @@ function filterByBroker(broker) {
 function searchPositions() {
     const input = document.getElementById('search-input');
     const filter = input.value.toUpperCase();
-    const table = document.getElementById('positions-table');
-    const rows = table.getElementsByTagName('tr');
-
+    const summaryRows = document.querySelectorAll('.summary-row');
     let visibleCount = 0;
-    let totalValue = 0;
-
-    for (let i = 1; i < rows.length; i++) {
-        const symbolCell = rows[i].getElementsByTagName('td')[0];
-        const descCell = rows[i].getElementsByTagName('td')[1];
-
-        if (symbolCell && descCell) {
-            const symbolText = symbolCell.textContent || symbolCell.innerText;
-            const descText = descCell.textContent || descCell.innerText;
-
-            if (symbolText.toUpperCase().indexOf(filter) > -1 ||
-                descText.toUpperCase().indexOf(filter) > -1) {
-                rows[i].style.display = '';
-                visibleCount++;
-            } else {
-                rows[i].style.display = 'none';
-            }
+    let visibleHoldings = 0;
+    summaryRows.forEach(row => {
+        const symbolCell = row.cells[1];
+        const descCell = row.cells[2];
+        const match = (symbolCell.textContent || '').toUpperCase().includes(filter) ||
+                      (descCell.textContent || '').toUpperCase().includes(filter);
+        row.style.display = match ? '' : 'none';
+        const detailRow = row.nextElementSibling;
+        if (detailRow && detailRow.classList.contains('detail-row')) {
+            detailRow.style.display = match ? detailRow.style.display : 'none';
         }
-    }
-
+        if (match) {
+            visibleCount++;
+            const holdingVal = parseFloat(row.getAttribute('data-holding')) || 0;
+            visibleHoldings += holdingVal;
+        }
+    });
     document.getElementById('position-count').textContent = visibleCount;
+    const totalValEl = document.getElementById('total-value');
+    if (totalValEl) {
+        // keep existing total value text; holdings metric removed
+    }
 }
 
 function sortTable(columnIndex) {
     const table = document.getElementById('positions-table');
-    const rows = Array.from(table.rows).slice(1);
-    const currentDir = table.getAttribute('data-sort-dir') || 'asc';
+    const tbody = table.tBodies[0];
+    const summaryRows = Array.from(tbody.querySelectorAll('tr.summary-row'));
+    const currentDir = table.getAttribute(`data-sort-dir-${columnIndex}`) || 'asc';
     const newDir = currentDir === 'asc' ? 'desc' : 'asc';
 
-    rows.sort((a, b) => {
-        const aVal = a.cells[columnIndex].textContent.trim();
-        const bVal = b.cells[columnIndex].textContent.trim();
+    const parseVal = (row, idx) => {
+        const text = row.cells[idx]?.textContent.trim() || '';
+        const num = parseFloat(text.replace(/[^0-9.-]/g, ''));
+        if (!isNaN(num)) return num;
+        return text.toUpperCase();
+    };
 
-        const aNum = parseFloat(aVal.replace(/[^0-9.-]/g, ''));
-        const bNum = parseFloat(bVal.replace(/[^0-9.-]/g, ''));
-
-        if (!isNaN(aNum) && !isNaN(bNum)) {
-            return newDir === 'asc' ? aNum - bNum : bNum - aNum;
+    summaryRows.sort((a, b) => {
+        const aVal = parseVal(a, columnIndex);
+        const bVal = parseVal(b, columnIndex);
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return newDir === 'asc' ? aVal - bVal : bVal - aVal;
         }
-
-        return newDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+        return newDir === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
     });
 
-    rows.forEach(row => table.tBodies[0].appendChild(row));
-    table.setAttribute('data-sort-dir', newDir);
+    tbody.innerHTML = '';
+    summaryRows.forEach(row => {
+        const detail = row.nextElementSibling && row.nextElementSibling.classList.contains('detail-row')
+            ? row.nextElementSibling
+            : null;
+        tbody.appendChild(row);
+        if (detail) tbody.appendChild(detail);
+    });
+    table.setAttribute(`data-sort-dir-${columnIndex}`, newDir);
 }
 
 function exportToCSV() {
@@ -161,6 +232,33 @@ function exportToCSV() {
     a.href = url;
     a.download = 'positions_{{ date }}.csv';
     a.click();
+}
+
+function toggleRow(key) {
+    const detailRow = document.getElementById(`detail-${key}`);
+    if (!detailRow) return;
+    const isHidden = detailRow.style.display === 'none';
+    detailRow.style.display = isHidden ? '' : 'none';
+    const toggleBtn = detailRow.previousElementSibling.querySelector('button[aria-label="toggle"]');
+    if (toggleBtn) {
+        toggleBtn.textContent = isHidden ? '-' : '+';
+    }
+}
+
+function expandAll() {
+    document.querySelectorAll('.detail-row').forEach(row => {
+        row.style.display = '';
+        const toggleBtn = row.previousElementSibling.querySelector('button[aria-label="toggle"]');
+        if (toggleBtn) toggleBtn.textContent = '-';
+    });
+}
+
+function collapseAll() {
+    document.querySelectorAll('.detail-row').forEach(row => {
+        row.style.display = 'none';
+        const toggleBtn = row.previousElementSibling.querySelector('button[aria-label="toggle"]');
+        if (toggleBtn) toggleBtn.textContent = '+';
+    });
 }
 </script>
 {% endblock %}

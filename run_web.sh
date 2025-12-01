@@ -46,7 +46,7 @@ echo "========================================="
 echo ""
 
 # Start the Flask app inside the package
-FLASK_ENV=development python -c "
+PYTHONPATH=src FLASK_ENV=development python -c "
 from src.webapp.app import app
 app.run(host='0.0.0.0', port=$PORT, debug=True)
 "

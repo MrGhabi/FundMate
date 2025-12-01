@@ -105,7 +105,8 @@ def get_option_multiplier(stock_code: str, raw_description: str = None, broker_m
     # Priority 1: Use broker-provided multiplier if available
     if broker_multiplier is not None and broker_multiplier > 0:
         logger.debug(f"Using broker-provided multiplier: {broker_multiplier}")
-        return int(broker_multiplier)
+        # Preserve fractional multipliers (e.g., 0.01 for bonds/notes)
+        return float(broker_multiplier)
     
     # Check if it's an option first
     if not is_option_contract(stock_code, raw_description):

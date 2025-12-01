@@ -7,6 +7,63 @@ function changeDateFilter(date) {
     window.location.search = params.toString();
 }
 
+// Check date status and run pipeline if missing
+async function runDateIfMissing() {
+    const inputEl = document.getElementById('date-input') || document.getElementById('date-select');
+    if (!inputEl) return;
+    const date = inputEl.value;
+    if (!date) return;
+
+    const statusEl = document.getElementById('date-status');
+    try {
+        const res = await fetch(`/api/date-status?date=${date}`);
+        const data = await res.json();
+        if (res.ok && data.exists) {
+            changeDateFilter(date);
+            return;
+        }
+        const confirmed = confirm(`No processed data for ${date}. Run pipeline with TC now?`);
+        if (!confirmed) return;
+
+        const runRes = await fetch(`/api/run-date?date=${date}&use_tc=true`, { method: 'POST' });
+        const runData = await runRes.json();
+        if (!runRes.ok || !runData.job_id) {
+            showNotification(runData.error || 'Failed to start job', 'error');
+            return;
+        }
+        showNotification(`Started job ${runData.job_id} for ${date}`, 'info');
+        pollJob(runData.job_id, date);
+    } catch (e) {
+        if (statusEl) statusEl.textContent = 'Error checking date';
+        showNotification(e.message, 'error');
+    }
+}
+
+async function pollJob(jobId, targetDate) {
+    const statusEl = document.getElementById('date-status');
+    const check = async () => {
+        const res = await fetch(`/api/jobs/${jobId}`);
+        const data = await res.json();
+        if (!res.ok) {
+            if (statusEl) statusEl.textContent = 'Job not found';
+            showNotification('Job not found', 'error');
+            return;
+        }
+        if (statusEl) statusEl.textContent = `${data.status}: ${data.message || ''}`;
+        if (data.status === 'completed') {
+            showNotification('Date ready, reloading...', 'success');
+            changeDateFilter(targetDate);
+            return;
+        }
+        if (data.status === 'failed' || data.status === 'partial') {
+            showNotification(data.error || 'Job failed', 'error');
+            return;
+        }
+        setTimeout(check, 3000);
+    };
+    check();
+}
+
 // Format currency
 function formatCurrency(value, currency = 'USD') {
     const symbols = {
@@ -201,6 +258,27 @@ function initTooltips() {
         });
     });
 }
+
+function setupDatePicker() {
+    if (typeof flatpickr === 'undefined') return;
+    const input = document.getElementById('date-input');
+    if (!input) return;
+    flatpickr(input, {
+        dateFormat: 'Y-m-d',
+        defaultDate: input.value || undefined,
+        minDate: '2025-01-01',
+        allowInput: true,
+        disableMobile: true,
+        position: 'below',
+        onChange: (selectedDates, dateStr) => {
+            input.value = dateStr;
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    setupDatePicker();
+});
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {

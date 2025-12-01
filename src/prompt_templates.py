@@ -128,5 +128,44 @@ PROMPT_TEMPLATES = {
       - HK options: keep original format with 3-letter HKATS code (e.g., "CLI 260629 20.00 CALL")
       
       IMPORTANT: For each holding, identify the price currency and output as 'PriceCurrency' field (values: USD/HKD/CNY).
+      """}],
+
+    "CIS":
+    [{"type": "text",
+      "text": """
+      You are extracting cash and positions from a CIS (China Industrial Securities International) daily statement PDF.
+
+      Output strictly as JSON with keys:
+      {
+        "Cash": {"USD": <number>, "HKD": <number>, "CNY": <number>},
+        "Positions": [
+          {
+            "StockCode": "<code>",
+            "Description": "<full description>",
+            "Holding": <number>,
+            "Price": <price>,
+            "PriceCurrency": "<CCY>",
+            "Multiplier": 1
+          }
+        ]
+      }
+
+      Cash extraction:
+      - Locate the cash/asset balance section (资产结馀概览/資產結餘概覽).
+      - Use the final settled balance by currency; fill missing currencies as 0.
+      - Numbers must be pure numerics (no commas, no symbols).
+
+      Positions extraction:
+      - Locate portfolio/holdings (投资组合/投資組合).
+      - For each row, extract:
+        * StockCode from the Code column (e.g., "00596").
+        * Description from the Description column.
+        * Holding from Quantity/持仓.
+        * Price from Price/市价.
+        * PriceCurrency from the row currency (e.g., HKD).
+        * Multiplier: 1.
+      - If only one holding exists, still output a list with one object.
+
+      Do not include extra text outside JSON. All numbers must be numeric.
       """}]
 }

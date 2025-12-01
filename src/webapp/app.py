@@ -15,12 +15,14 @@ import uuid
 from werkzeug.utils import secure_filename
 import zipfile
 import re
+import math
 
 from src.config import settings
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 TEMPLATE_DIR = PACKAGE_ROOT / 'templates'
 STATIC_DIR = PACKAGE_ROOT / 'static'
+ARCHIVE_DIR = Path('./data/archives')
 
 app = Flask(
     __name__,
@@ -279,9 +281,10 @@ def process_multiple_brokers(job_id: str, broker_files: Dict[str, List[Path]], d
             }
 
             if failed_brokers:
-                status_msg = f'Processed {len(processed_brokers)}/{total_brokers} broker(s). {len(failed_brokers)} failed: {", ".join([fb["broker"] for fb in failed_brokers])}'
+                failed_list = ', '.join([fb.get('broker', '') for fb in failed_brokers])
+                status_msg = f"Processed {len(processed_brokers)}/{total_brokers} broker(s). {len(failed_brokers)} failed: {failed_list}"
             else:
-                status_msg = f'Successfully processed all {len(processed_brokers)} broker(s) for {date}'
+                status_msg = f"Successfully processed all {len(processed_brokers)} broker(s) for {date}"
 
             update_job_status(
                 job_id,
@@ -291,12 +294,13 @@ def process_multiple_brokers(job_id: str, broker_files: Dict[str, List[Path]], d
                 result=result
             )
         else:
+            failed_list = ', '.join([fb.get('broker', '') for fb in failed_brokers])
             update_job_status(
                 job_id,
                 'failed',
                 'Processing completed but no output generated',
                 100,
-                error=f'Failed brokers: {", ".join([fb["broker"] for fb in failed_brokers])}'
+                error=f"Failed brokers: {failed_list}"
             )
 
     except Exception as e:
@@ -356,24 +360,82 @@ def load_portfolio_data(date: str) -> Dict:
     return data
 
 
+def run_date_pipeline(job_id: str, date: str, use_tc: bool = True):
+    """Run main pipeline for a given date in background (optionally with TC)"""
+    try:
+        from src.main import main as process_main
+        import sys
+
+        update_job_status(
+            job_id,
+            'processing',
+            f"Starting pipeline for {date} ({'with TC' if use_tc else 'base only'})",
+            10
+        )
+
+        old_argv = sys.argv
+        try:
+            argv = [
+                'web_app_date_run',
+                str(ARCHIVE_DIR),
+                '--date', date,
+            ]
+            if use_tc:
+                argv.append('--use-tc')
+            sys.argv = argv
+
+            process_main()
+
+            update_job_status(
+                job_id,
+                'processing',
+                f"Finished pipeline for {date}, validating output...",
+                90
+            )
+        finally:
+            sys.argv = old_argv
+
+        result_dir = Path(settings.result_dir) / date
+        if result_dir.exists():
+            update_job_status(
+                job_id,
+                'completed',
+                f"Success: generated output for {date}",
+                100,
+                result={'date': date, 'output_dir': str(result_dir)}
+            )
+        else:
+            update_job_status(
+                job_id,
+                'failed',
+                f"Pipeline finished but no output found for {date}",
+                100,
+                error='Missing output directory'
+            )
+    except Exception as e:
+        import traceback
+        update_job_status(
+            job_id,
+            'failed',
+            f"Pipeline failed: {e}",
+            100,
+            error=traceback.format_exc()
+        )
+
+
 @app.route('/')
 def index():
     """Dashboard - main overview page"""
     available_dates = get_available_dates()
 
-    if not available_dates:
-        return render_template('no_data.html')
-
-    # Use the most recent date by default
-    selected_date = request.args.get('date', available_dates[0])
-
-    if selected_date not in available_dates:
-        selected_date = available_dates[0]
+    # Allow free date selection; fall back to most recent available for display
+    requested_date = request.args.get('date')
+    selected_date = requested_date or (available_dates[0] if available_dates else datetime.now().strftime('%Y-%m-%d'))
 
     data = load_portfolio_data(selected_date)
 
     if not data:
-        return render_template('error.html', error="Failed to load portfolio data")
+        return render_template('no_data.html', selected_date=selected_date, available_dates=available_dates)
 
     # Calculate summary statistics
     summary = calculate_summary(data)
@@ -413,13 +475,91 @@ def positions():
     # Get unique brokers for filter dropdown
     brokers = sorted(data['positions'][broker_col].unique().tolist())
 
-    # Convert to records for template
-    positions_list = positions_df.to_dict('records')
+    # Normalize numeric fields
+    positions_df['holding_num'] = pd.to_numeric(positions_df['holding'], errors='coerce').fillna(0)
+    if 'position_value_usd' in positions_df.columns:
+        positions_df['value_num'] = pd.to_numeric(positions_df['position_value_usd'], errors='coerce').fillna(0)
+    else:
+        positions_df['value_num'] = 0
+
+    def _sig_round(value: float, sig: int = 3) -> float:
+        if value is None:
+            return None
+        if value == 0:
+            return 0.0
+        magnitude = int(math.floor(math.log10(abs(value))))
+        decimals = max(sig - 1 - magnitude, 0)
+        return round(value, decimals)
+
+    def _group_key(row) -> str:
+        stock_code = (row.get('stock_code') or '') if isinstance(row, dict) else row.stock_code
+        raw_desc = (row.get('raw_description') or '') if isinstance(row, dict) else row.raw_description
+        upper_code = stock_code.upper() if isinstance(stock_code, str) else ''
+        # Use raw_description as key for options/derivatives to avoid mis-merge
+        if raw_desc and ('OPTION' in upper_code or 'OPTION' in raw_desc.upper()):
+            return raw_desc
+        return stock_code or raw_desc or 'UNKNOWN'
+
+    positions_df['group_key'] = positions_df.apply(_group_key, axis=1)
+
+    aggregated_positions = []
+    for key, grp in positions_df.groupby('group_key'):
+        grp_sorted = grp.sort_values(by='value_num', ascending=False)
+        symbol = grp_sorted['stock_code'].dropna().iloc[0] if 'stock_code' in grp_sorted.columns else key
+        description = grp_sorted['raw_description'].dropna().iloc[0] if 'raw_description' in grp_sorted.columns else ''
+        total_holding = float(grp_sorted['holding_num'].sum())
+        total_value = float(grp_sorted['value_num'].sum()) if 'position_value_usd' in grp_sorted.columns else None
+        children = []
+        best_price = None
+        best_price_currency = None
+        best_source = None
+        for _, row in grp_sorted.iterrows():
+            child_price = row.get('final_price')
+            child_currency = row.get('optimized_price_currency') or row.get('broker_price_currency')
+            child_source = row.get('final_price_source')
+            children.append({
+                'broker_name': row.get(broker_col, ''),
+                'account_id': row.get('account_id', ''),
+                'holding': float(row.get('holding_num', 0)),
+                'final_price': child_price,
+                'price_currency': child_currency,
+                'final_price_source': child_source,
+                'position_value_usd': row.get('position_value_usd'),
+                'date': row.get('date')
+            })
+            # Prefer Futu price; otherwise first available price
+            if child_price is not None:
+                if best_source is None:
+                    best_price = _sig_round(float(child_price), 3)
+                    best_price_currency = child_currency
+                    best_source = child_source
+                elif best_source != 'Futu' and child_source == 'Futu':
+                    best_price = _sig_round(float(child_price), 3)
+                    best_price_currency = child_currency
+                    best_source = child_source
+
+        aggregated_positions.append({
+            'key': key,
+            'symbol': symbol or key,
+            'description': description or key,
+            'total_holding': total_holding,
+            'total_value_usd': total_value,
+            'broker_count': int(grp_sorted[broker_col].nunique()),
+            # Aggregate row price: prefer Futu price if exists; else first available; no averaging
+            'display_price': best_price,
+            'display_price_currency': best_price_currency,
+            'price_source': best_source,
+            'children': children
+        })
+
+    # Sort aggregated list by total_value descending
+    aggregated_positions.sort(key=lambda x: x['total_value_usd'] if x['total_value_usd'] is not None else 0, reverse=True)
 
     return render_template('positions.html',
                          date=selected_date,
                          available_dates=available_dates,
-                         positions=positions_list,
+                         positions=positions_df.to_dict('records'),
+                         aggregated_positions=aggregated_positions,
                          brokers=brokers,
                          selected_broker=broker_filter)
 
@@ -683,6 +823,49 @@ def list_jobs():
     jobs_list.sort(key=lambda x: x['created_at'], reverse=True)
 
     return jsonify(jobs_list)
+
+
+@app.route('/api/date-status')
+def api_date_status():
+    """Check if data exists for a date"""
+    date = request.args.get('date')
+    if not date:
+        return jsonify({'error': 'date required'}), 400
+    date_dir = Path(settings.result_dir) / date
+    exists = date_dir.exists() and (date_dir / f"cash_summary_{date}.parquet").exists()
+    return jsonify({'date': date, 'exists': exists})
+
+
+@app.route('/api/run-date', methods=['POST'])
+def api_run_date():
+    """Trigger pipeline for a date (with TC by default)"""
+    date = request.args.get('date') or request.form.get('date')
+    use_tc = (request.args.get('use_tc', 'true').lower() == 'true') or (request.form.get('use_tc', 'true').lower() == 'true')
+    if not date:
+        return jsonify({'error': 'date required'}), 400
+    try:
+        datetime.strptime(date, '%Y-%m-%d')
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+    job_id = str(uuid.uuid4())
+    with processing_lock:
+        processing_jobs[job_id] = {
+            'status': 'pending',
+            'date': date,
+            'created_at': datetime.now().isoformat(),
+            'message': 'Queued',
+            'result': None,
+            'error': None,
+            'job_type': 'run_date',
+            'use_tc': use_tc
+        }
+
+    thread = threading.Thread(target=run_date_pipeline, args=(job_id, date, use_tc))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({'job_id': job_id, 'date': date, 'use_tc': use_tc, 'status': 'processing'})
 
 
 @app.route('/api/summary/<date>')

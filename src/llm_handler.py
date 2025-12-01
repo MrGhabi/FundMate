@@ -56,12 +56,12 @@ class LLMHandler:
     Handles broker PDF statements directly without image conversion
     """
     
-    def __init__(self):
+    def __init__(self, model: Optional[str] = None):
         load_dotenv()
         
         self.api_key = os.getenv("LLM_API_KEY")
         self.base_url = os.getenv("LLM_BASE_URL")
-        self.model = os.getenv("LLM_MODEL", "gemini-2.5-pro")
+        self.model = model or os.getenv("LLM_MODEL", "gemini-2.5-pro")
         
         if not self.api_key or not self.base_url:
             raise ValueError("Missing LLM_API_KEY or LLM_BASE_URL")
@@ -145,16 +145,17 @@ class LLMHandler:
                 
                 # Try to parse JSON response
                 content = response.json()['choices'][0]['message']['content']
+                raw_snippet = content[:500]
                 try:
                     return self._parse_json_response(content)
                 except Exception as parse_error:
                     # JSON parsing failed, retry if we have attempts left
-                    last_error = parse_error
+                    last_error = f"{parse_error} | raw: {raw_snippet}"
                     if attempt < max_retries - 1:
-                        logger.warning(f"JSON parse failed (attempt {attempt + 1}/{max_retries}): {str(parse_error)[:200]}")
+                        logger.warning(f"JSON parse failed (attempt {attempt + 1}/{max_retries}): {str(parse_error)[:200]} | snippet: {raw_snippet}")
                         continue
                     else:
-                        raise Exception(f"JSON parse failed after {max_retries} attempts: {parse_error}")
+                        raise Exception(f"JSON parse failed after {max_retries} attempts: {parse_error} | raw: {raw_snippet}")
                         
             except Exception as e:
                 last_error = e

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}FundMate{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     {% block extra_css %}{% endblock %}
 </head>
@@ -26,16 +27,16 @@
     </nav>
 
     <main class="container">
-        {% if available_dates %}
         <div class="date-selector">
-            <label for="date-select">Select Date:</label>
-            <select id="date-select" onchange="changeDateFilter(this.value)">
-                {% for d in available_dates %}
-                <option value="{{ d }}" {% if d == date %}selected{% endif %}>{{ d }}</option>
-                {% endfor %}
-            </select>
+            <div class="date-control">
+                <label for="date-input">Select Date</label>
+                <div class="date-input-group">
+                    <input type="date" id="date-input" value="{{ date }}" min="2025-01-01">
+                    <button class="btn btn-secondary" onclick="runDateIfMissing()">Load</button>
+                </div>
+                <div id="date-status" class="date-status"></div>
+            </div>
         </div>
-        {% endif %}
 
         {% block content %}{% endblock %}
     </main>
@@ -48,6 +49,7 @@
     </footer>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

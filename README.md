@@ -8,6 +8,7 @@
 
 - 📘 [Developer Guide](docs/DEV.md) — architecture, directory layout, CLI/TC/Web details, env vars, troubleshooting.
 - 🤖 [Agent Onboarding](AGENTS.md) — pipeline decisions and testing philosophy for AI/automation agents.
+- 🗂️ Metadata/archiving tools: `src.metadata.detector` + `src.metadata.organizer` (keeps multiple broker/date/account files by suffixing `_cash`/`_position` to avoid overwrites).
 
 ## Highlights
 

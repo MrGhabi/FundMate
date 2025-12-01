@@ -201,16 +201,24 @@ class BrokerStatementProcessor:
                     
                 positions = broker_payload.get("positions", [])
                 statement_date = broker_payload.get("statement_date") or date
-                logger.info(f"Processing {len(positions)} Excel positions for {broker_name}")
+                account_id = broker_payload.get("account_id", "EXCEL")
+                cash_data = broker_payload.get("cash_data") or {'Total': 0.0, 'Total_type': 'USD'}
+                usd_total = 0.0
+                # Prefer explicit USD field; fallback to Total
+                if isinstance(cash_data, dict):
+                    usd_total = float(cash_data.get('USD') or 0.0)
+                    if usd_total == 0.0:
+                        usd_total = float(cash_data.get('Total') or 0.0)
+                logger.info(f"Processing {len(positions)} Excel positions for {broker_name} (account {account_id})")
                 
                 # Create ProcessedResult for Excel data
                 # Note: Excel data typically doesn't contain cash, only positions
                 excel_result = ProcessedResult(
                     broker_name=broker_name,
-                    account_id='EXCEL',  # Mark as Excel source
-                    cash_data={'Total': 0.0, 'Total_type': 'USD'},  # No cash in Excel
+                    account_id=account_id,
+                    cash_data=cash_data,
                     positions=positions,
-                    usd_total=0.0,  # No cash
+                    usd_total=usd_total,
                     statement_date=statement_date
                 )
                 
@@ -618,7 +626,7 @@ class BrokerStatementProcessor:
                 return None
             
             # Convert PDF result to ProcessedResult format
-            data = pdf_result['data']
+            data = self._normalize_llm_output(pdf_result['data'])
             account_id = override_account or pdf_result.get('account_id')
             
             # Calculate USD total from cash data
@@ -695,4 +703,62 @@ class BrokerStatementProcessor:
         except (ValueError, TypeError, ZeroDivisionError) as e:
             logger.warning(f"Error calculating USD total: {e}")
             return 0.0
+
+    def _normalize_llm_output(self, data: dict) -> dict:
+        """Normalize LLM output keys to canonical forms (Cash/Positions)."""
+        if not isinstance(data, dict):
+            return {'Cash': {}, 'Positions': []}
+
+        normalized = dict(data)
+
+        # Normalize cash key casing
+        if 'Cash' not in normalized:
+            if 'cash' in normalized:
+                normalized['Cash'] = normalized.pop('cash')
+            else:
+                normalized['Cash'] = {}
+
+        # Normalize positions key casing
+        if 'Positions' not in normalized:
+            if 'positions' in normalized:
+                normalized['Positions'] = normalized.pop('positions')
+            else:
+                normalized['Positions'] = []
+
+        # Normalize position dict keys (lowercase → canonical)
+        positions = []
+        for pos in normalized.get('Positions', []):
+            if not isinstance(pos, dict):
+                continue
+            positions.append({
+                'StockCode': pos.get('stock_code') or pos.get('StockCode'),
+                'Description': pos.get('description') or pos.get('Description'),
+                'Holding': pos.get('quantity') or pos.get('Holding'),
+                'Price': pos.get('price') or pos.get('Price'),
+                'PriceCurrency': pos.get('price_currency') or pos.get('PriceCurrency'),
+                'Multiplier': pos.get('multiplier') or pos.get('Multiplier'),
+            })
+        normalized['Positions'] = positions
+
+        # Ensure Cash is a dict; if list provided, convert to dict by currency
+        cash_val = normalized.get('Cash')
+        if isinstance(cash_val, list):
+            cash_dict = {}
+            for item in cash_val:
+                if not isinstance(item, dict):
+                    continue
+                curr = item.get('currency') or item.get('Currency')
+                amt = item.get('amount') or item.get('Amount')
+                if curr and amt is not None:
+                    try:
+                        cash_dict[curr.upper()] = float(amt)
+                    except Exception:
+                        continue
+            normalized['Cash'] = cash_dict
+        elif isinstance(cash_val, dict):
+            normalized['Cash'] = cash_val
+        else:
+            normalized['Cash'] = {}
+
+        return normalized
     

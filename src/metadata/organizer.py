@@ -81,6 +81,15 @@ def organize_files(records: list[MetadataRecord], output_dir: Path, dry_run: boo
                     )
                     continue
 
+        target_path = _resolve_target_path(record.file, target_path)
+        if target_path.exists():
+            existing_hash = _compute_sha256(target_path)
+            new_hash = _compute_sha256(record.file)
+            if existing_hash == new_hash:
+                logger.info(f"Duplicate content detected, skipping move: {record.file} -> {target_path}")
+                continue
+            target_path = _resolve_variant_target(record.file, target_path)
+
         if dry_run:
             logger.info(f"[DRY RUN] {record.file} -> {target_path}")
             continue
@@ -131,6 +140,42 @@ def _extract_date(name: str) -> Optional[str]:
     match = DATE_PATTERN.search(name)
     if match:
         return match.group(1)
+    return None
+
+
+def _resolve_target_path(source: Path, target: Path) -> Path:
+    """Handle existing target path collisions by appending a variant suffix."""
+    if not target.exists():
+        return target
+    return _resolve_variant_target(source, target)
+
+
+def _resolve_variant_target(source: Path, target: Path) -> Path:
+    base = target.stem
+    ext = target.suffix
+    suffix = _derive_suffix_from_name(source.name)
+    candidates = []
+    if suffix:
+        candidates.append(target.with_name(f"{base}_{suffix}{ext}"))
+    # Fallback to numbered variants.
+    n = 1
+    while True:
+        name = f"{base}_{suffix or 'v'}{n}{ext}"
+        candidate = target.with_name(name)
+        candidates.append(candidate)
+        n += 1
+        # Return the first non-existing candidate.
+        for cand in candidates:
+            if not cand.exists():
+                return cand
+
+
+def _derive_suffix_from_name(name: str) -> Optional[str]:
+    lower = name.lower()
+    if "cash" in lower:
+        return "cash"
+    if "position" in lower or "posn" in lower:
+        return "position"
     return None
 
 

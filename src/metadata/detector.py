@@ -6,9 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Iterable
 
 from loguru import logger
 
@@ -27,6 +28,7 @@ CANONICAL_BROKER_KEYWORDS: Dict[str, List[str]] = {
     "CICC": ["CICC", "CHINA INTERNATIONAL CAPITAL"],
     "FIRST_SHANGHAI": ["FIRST SHANGHAI"],
     "GS": ["GOLDMAN", "GOLDMAN SACHS"],
+    "CIS": ["CIS", "CHINA INDUSTRIAL SECURITIES", "兴证"],
     "HTI": ["HAITONG"],
     "HUATAI": ["HUATAI"],
     "IB": ["INTERACTIVEBROKERS", "INTERACTIVE BROKERS", "IBKR"],
@@ -36,6 +38,7 @@ CANONICAL_BROKER_KEYWORDS: Dict[str, List[str]] = {
     "SDICS": ["SDICS"],
     "TFI": ["TFI"],
     "TIGER": ["TIGER"],
+    "GSPB": ["GSPB", "GOLDMAN SACHS PB", "GS PB"],
 }
 
 BROKER_MAPPING_PROMPT = "\n".join(
@@ -47,7 +50,7 @@ BROKER_MAPPING_PROMPT = "\n".join(
 
 METADATA_SYSTEM_PROMPT = (
     "You are a broker statement metadata extractor. "
-    "Return a compact JSON object with BrokerName, AccountId, StatementDate (YYYY-MM-DD). "
+    "Return a compact JSON object with BrokerName, AccountId, StatementDate (YYYY-MM-DD, e.g., 1980-07-21). "
     "BrokerName MUST use one of the following canonical names: "
     f"{', '.join(CANONICAL_BROKER_KEYWORDS.keys())}. "
     "Use null when a field is missing. Output valid JSON only.\n"
@@ -188,6 +191,11 @@ class StatementMetadataDetector:
         if not value:
             return None
         value = value.strip()
+        # Handle ranges like "June 1, 2025 - June 30, 2025": take the last date.
+        if " - " in value and any(m.isalpha() for m in value):
+            parts = value.split(" - ")
+            value = parts[-1].strip()
+
         # Try YYYY-MM-DD first
         if re.match(r"\d{4}-\d{2}-\d{2}", value):
             return value[:10]
@@ -197,6 +205,18 @@ class StatementMetadataDetector:
         if re.match(r"\d{2}/\d{2}/\d{4}", value):
             mm, dd, yyyy = value.split("/")
             return f"{yyyy}-{mm}-{dd}"
+        # Month name formats: "November 26, 2025" or "Feb 28, 2025"
+        month_map = {
+            "JAN": "01", "FEB": "02", "MAR": "03", "APR": "04", "MAY": "05", "JUN": "06",
+            "JUL": "07", "AUG": "08", "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12",
+        }
+        m = re.match(r"([A-Za-z]{3,})\s+(\d{1,2}),\s*(\d{4})", value)
+        if m:
+            mon = month_map.get(m.group(1).upper()[:3])
+            if mon:
+                dd = m.group(2).zfill(2)
+                yyyy = m.group(3)
+                return f"{yyyy}-{mon}-{dd}"
         return value
 
     def _canonicalize_broker(self, value: Optional[str]) -> Optional[str]:
@@ -215,6 +235,55 @@ class StatementMetadataDetector:
                 if key in data and data[key]:
                     return str(data[key])
         return None
+
+
+def detect_paths(paths: Iterable[Path], llm_handler: Optional[LLMHandler] = None, max_workers: int = 1) -> List[StatementMetadata]:
+    """Concurrent metadata detection helper."""
+    detector = StatementMetadataDetector(llm_handler=llm_handler)
+    results: List[StatementMetadata] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {executor.submit(detector.detect_file, p): p for p in paths}
+        for future in as_completed(future_map):
+            path = future_map[future]
+            try:
+                md = future.result()
+                if md:
+                    results.append(md)
+                    logger.info(f"[META] {path.name} -> {md.broker_name} {md.account_id} {md.statement_date}")
+                else:
+                    logger.warning(f"[META] {path.name} -> no metadata")
+            except Exception as exc:
+                logger.error(f"[META] {path.name} failed: {exc}")
+    return results
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Batch metadata detector")
+    parser.add_argument("--dir", type=str, required=True, help="Directory to scan")
+    parser.add_argument("--max-workers", type=int, default=1, help="Concurrency for detection")
+    parser.add_argument("--only-pdf", action="store_true", help="Process only PDFs")
+    parser.add_argument("--only-excel", action="store_true", help="Process only Excel")
+    args = parser.parse_args()
+
+    root = Path(args.dir)
+    if not root.exists():
+        parser.error(f"Directory not found: {root}")
+
+    suffixes = set()
+    if not args.only_excel:
+        suffixes.add(".pdf")
+    if not args.only_pdf:
+        suffixes.update({".xls", ".xlsx"})
+
+    files = [p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in suffixes]
+    logger.info(f"Scanning {len(files)} files under {root} with {args.max_workers} workers")
+
+    llm_handler = LLMHandler() if ".pdf" in suffixes else None
+    detect_paths(files, llm_handler=llm_handler, max_workers=args.max_workers)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()
 
 
 SKIP_PARTS = {"__MACOSX"}

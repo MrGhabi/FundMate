@@ -181,6 +181,7 @@ python -m src.metadata.organizer temp/metadata_20250807.jsonl --output data/arch
 ```
 
 - Deduplication: organizer computes SHA-256 against existing broker files; identical content for the same broker/date is skipped, hash conflicts are reported.
+- Collision handling: when the same broker/date/account produces multiple files (e.g., GSPB Position + Cash), organizer will keep both by appending a suffix from the source name (`_position`, `_cash`, else `_vN`) instead of overwriting.
 - Excel routing: filename hints (`ms|morgan|gs|goldman|tenfund|optiondaily|trade confirmation`) pick a parser, then the extractor will fall back to try all parsers before giving up, so content is still inspected when filenames are non-standard.
 - TC Excel: tagged as broker `TC` with date inferred from filename or sheet content; account may remain `UNKNOWN` unless the sheet carries it.
 - PDF decryption: metadata detector auto-decrypts PDFs using `pdf_processor.BROKER_CONFIG` passwords (writes a temp decrypted copy for LLM), so encrypted PDFs won’t be mis-identified as separate accounts. Keep encrypted originals if needed for audit, but store readable copies in `data/archives`.
