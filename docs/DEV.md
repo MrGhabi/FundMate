@@ -180,10 +180,14 @@ python -m src.metadata.detector temp/20250807_statement_extract --output temp/me
 python -m src.metadata.organizer temp/metadata_20250807.jsonl --output data/archives
 ```
 
-- Deduplication: organizer computes SHA-256 against existing broker files; identical content for the same broker/date is skipped, hash conflicts are reported.
-- Collision handling: when the same broker/date/account produces multiple files (e.g., GSPB Position + Cash), organizer will keep both by appending a suffix from the source name (`_position`, `_cash`, else `_vN`) instead of overwriting.
-- Excel routing: filename hints (`ms|morgan|gs|goldman|tenfund|optiondaily|trade confirmation`) pick a parser, then the extractor will fall back to try all parsers before giving up, so content is still inspected when filenames are non-standard.
-- TC Excel: tagged as broker `TC` with date inferred from filename or sheet content; account may remain `UNKNOWN` unless the sheet carries it.
+- Naming & dedupe:
+  - Canonical filename: `{BROKER}_{YYYY-MM-DD}_{ORIGINAL_NAME}.{ext}`. The trailing segment preserves the user’s original filename for traceability; organizer dedupes by `BROKER + hash + statement_date`, not by that trailing segment.
+  - TC files stay under `data/archives/TC/` and should keep `TC-YYYY-MM-DD-*.xlsx` naming; do not let organizer flatten or rename them into broker roots.
+  - Hash dedupe: organizer computes SHA-256 per broker/date; identical content is skipped, hash conflicts are reported.
+  - Collision handling: when the same broker/date/account produces multiple files (e.g., GSPB Position + Cash), organizer appends `_position`, `_cash`, or `_vN` rather than overwriting.
+
+- Excel routing: filename hints (`ms|morgan|gs|goldman|tenfund|optiondaily|trade confirmation`) pick a parser, then the extractor will fall back to try all parsers before giving up, so content is still inspected when filenames are non-standard. For TC, rely on **table shape** (headers such as `Trade Date`, `BUY/SELL`, `Avg. Price`, `Amount (USD)`, `Broker`, `Currency`) rather than only the filename; filenames containing GS/MS/GSPB can otherwise be misrouted.
+- TC Excel: tagged as broker `TC` with date inferred from filename or sheet content; account may remain `UNKNOWN` unless the sheet carries it. Keep TC files in `data/archives/TC/` to avoid organizer renaming them into broker roots.
 - PDF decryption: metadata detector auto-decrypts PDFs using `pdf_processor.BROKER_CONFIG` passwords (writes a temp decrypted copy for LLM), so encrypted PDFs won’t be mis-identified as separate accounts. Keep encrypted originals if needed for audit, but store readable copies in `data/archives`.
 - TC file dedupe: TC parsing now SHA-256 de-duplicates identical TC-*.xlsx files and warns when skipping duplicates, preventing double application of the same trades.
 - Archive hygiene: if both encrypted and decrypted versions of the same account/date exist, keep the readable version in `data/archives` and move the encrypted duplicate to `temp/null/` to avoid multi-account duplication.

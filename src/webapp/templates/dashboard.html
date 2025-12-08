@@ -18,11 +18,7 @@
         <div class="card">
             <div class="card-header">Total Cash</div>
             <div class="card-value">{{ summary.total_cash_usd | format_currency('USD') }}</div>
-            <div class="card-subtext">
-                {% for currency, amount in summary.cash_by_currency.items() %}
-                {{ amount | format_currency(currency) }}{% if not loop.last %}, {% endif %}
-                {% endfor %}
-            </div>
+            <div class="card-subtext">See breakdown below</div>
         </div>
 
         <div class="card">
@@ -87,26 +83,25 @@
     {% if summary.cash_by_currency %}
     <div class="section">
         <h3 class="section-title">Cash Holdings by Currency</h3>
-        <div class="chart-container">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Currency</th>
-                        <th class="text-right">Amount</th>
-                        <th class="text-right">% of Total Cash</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% set total_cash = summary.cash_by_currency.values() | sum %}
-                    {% for currency, amount in summary.cash_by_currency.items() %}
-                    <tr>
-                        <td><strong>{{ currency }}</strong></td>
-                        <td class="text-right">{{ amount | format_currency(currency) }}</td>
-                        <td class="text-right">{{ (amount / total_cash * 100) | format_percent }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="currency-grid">
+            {% set total_cash = summary.cash_by_currency.values() | sum %}
+            {% for currency, amount in summary.cash_by_currency.items() %}
+            {% set pct = (amount / total_cash * 100) if total_cash else 0 %}
+            <div class="currency-card">
+                <div class="currency-meta">
+                    <span class="currency-name">{{ currency }}</span>
+                    <span class="currency-amount">{{ amount | format_currency(currency) }}</span>
+                </div>
+                <div class="bar-row">
+                    <div class="bar-track small">
+                        <div class="bar-fill" style="width: {{ pct }}%">
+                            {% set pct_text = pct | round(1) %}
+                            <span class="bar-pct inside">{{ pct_text }}%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
         </div>
     </div>
     {% endif %}

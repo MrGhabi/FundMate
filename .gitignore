@@ -33,3 +33,7 @@ AGENTS.md
 .cursor/
 
 fundmate.egg-info
+
+archives/
+
+.pytest_cache

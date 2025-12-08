@@ -46,7 +46,12 @@ echo "========================================="
 echo ""
 
 # Start the Flask app inside the package
-PYTHONPATH=src FLASK_ENV=development python -c "
+PORT=$PORT PYTHONPATH=src FLASK_ENV=development python - <<'PY'
+import os
 from src.webapp.app import app
-app.run(host='0.0.0.0', port=$PORT, debug=True)
-"
+
+use_reloader = os.environ.get("FLASK_USE_RELOADER", "false").lower() == "true"
+port = int(os.environ.get("PORT", "5000"))
+
+app.run(host='0.0.0.0', port=port, debug=True, use_reloader=use_reloader)
+PY

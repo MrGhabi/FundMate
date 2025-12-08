@@ -677,11 +677,52 @@ def cash():
     # Calculate totals by broker (use usd_total column)
     broker_col = 'broker_name' if 'broker_name' in cash_df.columns else 'broker'
     if 'usd_total' in cash_df.columns:
-        cash_by_broker = cash_df.groupby(broker_col)['usd_total'].sum().to_dict()
+        cash_by_broker = (
+            cash_df.groupby(broker_col)['usd_total']
+            .sum()
+            .sort_values(ascending=False)
+            .to_dict()
+        )
+        # Drop zero/NaN brokers
+        cash_by_broker = {k: float(v) for k, v in cash_by_broker.items() if v and v != float('nan')}
     else:
         cash_by_broker = {}
 
+    # Clean NaNs and prepare records
     cash_list = cash_df.to_dict('records')
+    cleaned_list = []
+    for rec in cash_list:
+        for key in ['cny', 'hkd', 'usd', 'usd_total']:
+            val = rec.get(key)
+            if val is None:
+                continue
+            try:
+                if isinstance(val, str):
+                    if val.lower() == 'nan':
+                        rec[key] = None
+                        continue
+                    try:
+                        num_val = float(val)
+                        if num_val == 0 or math.isnan(num_val) or math.isinf(num_val):
+                            rec[key] = None
+                        else:
+                            rec[key] = num_val
+                        continue
+                    except Exception:
+                        rec[key] = None
+                        continue
+                if isinstance(val, (int, float)):
+                    if val == 0 or math.isnan(val) or math.isinf(val):
+                        rec[key] = None
+                        continue
+            except Exception:
+                rec[key] = None
+
+        if any(rec.get(k) not in (None, 0) for k in ['cny', 'hkd', 'usd', 'usd_total']):
+            cleaned_list.append(rec)
+
+    cash_list = cleaned_list
+
     metadata = data.get('metadata', {}) if isinstance(data, dict) else {}
 
     # Prepare exchange rates for display (USD base → other currency)
@@ -1219,7 +1260,9 @@ def calculate_comparison(data1: Dict, data2: Dict, date1: str, date2: str) -> Di
         'portfolio_change': summary1['total_portfolio_value_usd'] - summary2['total_portfolio_value_usd'],
         'portfolio_change_pct': 0,
         'cash_change': summary1['total_cash_usd'] - summary2['total_cash_usd'],
+        'cash_change_pct': 0,
         'positions_change': summary1['total_positions_value_usd'] - summary2['total_positions_value_usd'],
+        'positions_change_pct': 0,
         'position_count_change': summary1['position_count'] - summary2['position_count'],
         'summary1': summary1,
         'summary2': summary2
@@ -1228,6 +1271,14 @@ def calculate_comparison(data1: Dict, data2: Dict, date1: str, date2: str) -> Di
     if summary2['total_portfolio_value_usd'] > 0:
         comparison['portfolio_change_pct'] = (
             (comparison['portfolio_change'] / summary2['total_portfolio_value_usd']) * 100
+        )
+    if summary2['total_cash_usd'] > 0:
+        comparison['cash_change_pct'] = (
+            (comparison['cash_change'] / summary2['total_cash_usd']) * 100
+        )
+    if summary2['total_positions_value_usd'] > 0:
+        comparison['positions_change_pct'] = (
+            (comparison['positions_change'] / summary2['total_positions_value_usd']) * 100
         )
 
     return comparison

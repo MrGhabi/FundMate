@@ -217,6 +217,23 @@ main.container {
     color: var(--text-secondary);
     min-height: 1rem;
 }
+
+/* Cash chips */
+.cash-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.cash-chip {
+    background: var(--accent-soft);
+    border: 1px solid transparent;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    font-weight: 700;
+    color: var(--primary-color);
+    font-size: 0.9rem;
+}
 }
 
 /* Page Title */
@@ -324,6 +341,7 @@ main.container {
 .data-table td {
     padding: 0.75rem;
     border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
 }
 
 .data-table tbody tr:hover {
@@ -550,84 +568,269 @@ main.container {
     margin-bottom: 2rem;
 }
 
-/* Comparison Selectors */
-.comparison-selectors {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2rem;
-    margin-bottom: 2rem;
-    padding: 2rem;
-    background-color: var(--surface);
-    border-radius: 0.5rem;
-    box-shadow: var(--shadow);
+
+.compare-head {
+    display: block;
 }
 
-.selector-group {
-    display: flex;
-    flex-direction: column;
+.compare-hero-strip {
+    display: grid;
+    grid-template-columns: minmax(320px, 380px) 1fr;
+    gap: 1.1rem;
+    padding: 1rem 1.3rem;
+    background: #fbfcfb;
+    border-radius: 16px;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.05);
+    align-items: stretch;
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+.compare-meta {
+    display: grid;
     gap: 0.5rem;
 }
 
-.selector-group label {
-    font-weight: 600;
+.compare-meta .eyebrow {
+    margin: 0;
     color: var(--text-secondary);
+    font-weight: 700;
+    letter-spacing: 0.02em;
 }
 
-.selector-group select {
-    padding: 0.75rem 1.25rem;
-    border: 2px solid var(--border-color);
-    border-radius: 0.375rem;
-    font-size: 1rem;
-    font-weight: 600;
-    background-color: var(--surface);
-    cursor: pointer;
+.comparison-selectors {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 0.65rem;
+    align-items: center;
+    margin: 0;
+    padding: 0.5rem 0.6rem;
+    background: #f5f8f6;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.03);
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,0.03);
+}
+
+.selector-pill {
+    display: grid;
+    gap: 0.25rem;
+    background: #fff;
+    border-radius: 12px;
+    padding: 0.6rem 0.75rem;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.05);
+}
+
+.selector-pill label {
+    font-weight: 700;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.selector-pill select {
+    padding: 0.55rem 0.75rem;
+    border: 1px solid rgba(0,0,0,0.06);
+    border-radius: 10px;
+    background: #fdfefe;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
 }
 
 .vs-separator {
-    font-size: 1.5rem;
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--text-secondary);
+    padding: 0 0.35rem;
+}
+
+.delta-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+    align-items: stretch;
+}
+
+.delta-card {
+    position: relative;
+    background: #fff;
+    border-radius: 12px;
+    padding: 0.85rem 1rem;
+    box-shadow: 0 10px 22px rgba(0,0,0,0.07);
+    min-height: 96px;
+    border: 1px solid rgba(0,0,0,0.04);
+}
+
+.delta-card::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    border-radius: 12px 0 0 12px;
+    background: var(--primary-color);
+    opacity: 0.8;
+}
+
+.delta-card.positive {
+    background: linear-gradient(135deg, #f5fbf7, #f9fdfa);
+    box-shadow: 0 12px 24px rgba(12, 95, 54, 0.12);
+}
+
+.delta-card.negative {
+    background: linear-gradient(135deg, #fef6f6, #fbeeee);
+    box-shadow: 0 12px 24px rgba(175, 56, 56, 0.14);
+}
+
+.delta-card.negative::before {
+    background: #c0392b;
+}
+
+.delta-label {
     font-weight: 700;
     color: var(--text-secondary);
-    padding: 0 1rem;
+    margin-bottom: 0.35rem;
+    letter-spacing: 0.01em;
 }
 
-/* Chart Container */
-.chart-container {
-    padding: 1rem 0;
-}
-
-.bar-chart-row {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1rem;
-}
-
-.bar-label {
-    min-width: 120px;
-    font-weight: 600;
+.delta-value {
+    font-weight: 800;
+    font-size: 1.08rem;
     color: var(--text-primary);
 }
 
-.bar-wrapper {
+.delta-sub {
+    color: var(--text-secondary);
+    font-weight: 700;
+    margin-top: 0.2rem;
+    text-align: right;
+}
+
+.delta-sub.pos {
+    color: #0d7c48;
+}
+
+.delta-sub.neg {
+    color: #be3a2c;
+}
+
+.compare-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+/* legacy compare hero styles removed */
+
+/* Broker bars */
+.broker-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.broker-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: #f4f7f5;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.04);
+}
+
+.broker-name {
+    font-weight: 700;
+    color: var(--text-primary);
+    flex: 0 0 160px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.broker-amount {
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    flex: 0 0 150px;
+    text-align: right;
+}
+
+.bar-track {
     flex: 1;
+    height: 26px;
+    background: #e8efec;
+    border-radius: 999px;
+    overflow: hidden;
     position: relative;
 }
 
-.bar {
+.bar-fill {
+    height: 100%;
     background: linear-gradient(90deg, var(--primary-color), var(--primary-dark));
-    height: 32px;
-    border-radius: 0.25rem;
     display: flex;
     align-items: center;
     padding: 0 0.75rem;
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.85rem;
+    border-radius: 999px;
+    min-width: 60px;
     transition: width 0.3s ease;
 }
 
-.bar-value {
-    color: white;
-    font-weight: 600;
-    font-size: 0.875rem;
+.bar-pct {
+    white-space: nowrap;
+}
+
+.bar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.bar-pct.outside {
+    color: var(--text-secondary);
+    font-weight: 700;
+    min-width: 48px;
+    text-align: right;
+}
+
+/* Currency cards on dashboard */
+.currency-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+}
+
+.currency-card {
+    background: #f8fafc;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.currency-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.currency-name {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.currency-amount {
+    font-weight: 700;
+    color: var(--text-secondary);
+    white-space: nowrap;
 }
 
 /* Exchange Rates */
@@ -848,7 +1051,9 @@ main.container {
         page-break-inside: avoid;
     }
 
-    .card {
+    .card,
+    .compare-table-card,
+    .currency-card {
         box-shadow: none;
         border: 1px solid var(--border-color);
     }

@@ -16,24 +16,17 @@
             <div class="card-subtext">
                 Across {{ accounts_by_currency.get(currency, 0) }} account(s)
             </div>
+            {% if exchange_rates_usd_base and currency != 'USD' %}
+            <div class="card-subtext rate-note">USD → {{ currency }}: {{ exchange_rates_usd_base.get(currency) | format_number }}</div>
+            {% elif currency == 'USD' %}
+            <div class="card-subtext rate-note">USD base</div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
 
     <!-- Exchange Rates Info -->
-    {% if exchange_rates_usd_base %}
-    <div class="section info-box">
-        <h3 class="section-title">Exchange Rates (USD Base)</h3>
-        <div class="exchange-rates">
-            {% for currency, rate in exchange_rates_usd_base.items() %}
-            <div class="rate-item">
-                <span class="currency">USD → {{ currency }}:</span>
-                <span class="rate">{{ rate | format_number }}</span>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
+    {% if false %}{# rates moved into summary cards #}{% endif %}
 
     <!-- Cash by Broker -->
     <div class="section">
@@ -50,16 +43,19 @@
                 </tr>
             </thead>
             <tbody>
-                {% for cash_item in cash_list %}
-                <tr>
-                    <td><span class="badge badge-{{ (cash_item.broker_name or cash_item.broker or 'default') | lower }}">{{ cash_item.broker_name or cash_item.broker }}</span></td>
-                    <td>{{ cash_item.account_id or 'N/A' }}</td>
-                    <td class="text-right">{{ cash_item.cny | format_currency('CNY') if cash_item.cny else '-' }}</td>
-                    <td class="text-right">{{ cash_item.hkd | format_currency('HKD') if cash_item.hkd else '-' }}</td>
-                    <td class="text-right">{{ cash_item.usd | format_currency('USD') if cash_item.usd else '-' }}</td>
-                    <td class="text-right"><strong>{{ cash_item.usd_total | format_currency('USD') if cash_item.usd_total else 'N/A' }}</strong></td>
-                </tr>
-                {% endfor %}
+            {% for cash_item in cash_list %}
+            {% set has_value = (cash_item.cny not in (None, 0)) or (cash_item.hkd not in (None, 0)) or (cash_item.usd not in (None, 0)) or (cash_item.usd_total not in (None, 0)) %}
+            {% if has_value %}
+            <tr>
+                <td><span class="badge badge-{{ (cash_item.broker_name or cash_item.broker or 'default') | lower }}">{{ cash_item.broker_name or cash_item.broker }}</span></td>
+                <td>{{ cash_item.account_id or 'N/A' }}</td>
+                <td class="text-right">{{ cash_item.cny | format_number if cash_item.cny not in (None, 0) else '-' }}</td>
+                <td class="text-right">{{ cash_item.hkd | format_number if cash_item.hkd not in (None, 0) else '-' }}</td>
+                <td class="text-right">{{ cash_item.usd | format_number if cash_item.usd not in (None, 0) else '-' }}</td>
+                <td class="text-right"><strong>{{ cash_item.usd_total | format_number if cash_item.usd_total not in (None, 0) else '-' }}</strong></td>
+            </tr>
+            {% endif %}
+            {% endfor %}
             </tbody>
             <tfoot>
                 <tr class="total-row">
@@ -77,18 +73,21 @@
     <!-- Cash Distribution Chart -->
     <div class="section">
         <h3 class="section-title">Cash Distribution by Broker</h3>
-        <div class="chart-container">
+        {% set total_sum = cash_by_broker.values() | sum if cash_by_broker else 0 %}
+        <div class="broker-bars">
             {% for broker, total in cash_by_broker.items() %}
-            <div class="bar-chart-row">
-                <div class="bar-label">{{ broker }}</div>
-                <div class="bar-wrapper">
-                    {% set max_value = cash_by_broker.values() | max %}
-                    {% set percentage = (total / max_value * 100) %}
-                    <div class="bar" style="width: {{ percentage }}%">
-                        <span class="bar-value">{{ total | format_number }}</span>
+            {% if total and total_sum %}
+            {% set pct = (total / total_sum * 100) %}
+            <div class="broker-bar-row">
+                <span class="broker-name" title="{{ broker }}">{{ broker }}</span>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width: {{ pct }}%">
+                        <span class="bar-pct">{{ pct | round(1) }}%</span>
                     </div>
                 </div>
+                <span class="broker-amount">{{ total | format_currency('USD') }}</span>
             </div>
+            {% endif %}
             {% endfor %}
         </div>
     </div>

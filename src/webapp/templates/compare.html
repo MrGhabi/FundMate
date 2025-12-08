@@ -4,81 +4,78 @@
 
 {% block content %}
 <div class="compare-page">
-    <h2 class="page-title">Historical Comparison</h2>
-
-    <!-- Date Selectors -->
-    <div class="comparison-selectors">
-        <div class="selector-group">
-            <label for="date1-select">Compare Date 1:</label>
-            <select id="date1-select" onchange="updateComparison('date1', this.value)">
-                {% for d in available_dates %}
-                <option value="{{ d }}" {% if d == date1 %}selected{% endif %}>{{ d }}</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div class="vs-separator">VS</div>
-
-        <div class="selector-group">
-            <label for="date2-select">Compare Date 2:</label>
-            <select id="date2-select" onchange="updateComparison('date2', this.value)">
-                {% for d in available_dates %}
-                <option value="{{ d }}" {% if d == date2 %}selected{% endif %}>{{ d }}</option>
-                {% endfor %}
-            </select>
-        </div>
-    </div>
-
     <!-- Overall Change Summary -->
-    <div class="section">
-        <h3 class="section-title">Portfolio Change: {{ comparison.date2 }} → {{ comparison.date1 }}</h3>
-
-        <div class="change-cards">
-            <div class="card {% if comparison.portfolio_change >= 0 %}positive{% else %}negative{% endif %}">
-                <div class="card-header">Portfolio Value Change</div>
-                <div class="card-value">
-                    {{ comparison.portfolio_change | format_currency('USD') }}
-                </div>
-                <div class="card-subtext">
-                    {% if comparison.portfolio_change_pct >= 0 %}↑{% else %}↓{% endif %}
-                    {{ comparison.portfolio_change_pct | abs | format_percent }}
-                </div>
-            </div>
-
-            <div class="card {% if comparison.cash_change >= 0 %}positive{% else %}negative{% endif %}">
-                <div class="card-header">Cash Change</div>
-                <div class="card-value">
-                    {{ comparison.cash_change | format_currency('USD') }}
-                </div>
-                <div class="card-subtext">
-                    {% if comparison.cash_change >= 0 %}Increased{% else %}Decreased{% endif %}
-                </div>
-            </div>
-
-            <div class="card {% if comparison.positions_change >= 0 %}positive{% else %}negative{% endif %}">
-                <div class="card-header">Positions Value Change</div>
-                <div class="card-value">
-                    {{ comparison.positions_change | format_currency('USD') }}
-                </div>
-                <div class="card-subtext">
-                    {% if comparison.positions_change >= 0 %}Increased{% else %}Decreased{% endif %}
+    <div class="compare-head">
+        <div class="compare-hero-strip">
+            <div class="compare-meta">
+                <p class="eyebrow">Historical Comparison</p>
+                <div class="comparison-selectors">
+                    <div class="selector-pill">
+                        <label for="date1-select">Previous Date</label>
+                        <select id="date1-select" onchange="updateComparison('date1', this.value)">
+                            {% for d in available_dates %}
+                            <option value="{{ d }}" {% if d == date1 %}selected{% endif %}>{{ d }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="vs-separator">VS</div>
+                    <div class="selector-pill">
+                        <label for="date2-select">Current Date</label>
+                        <select id="date2-select" onchange="updateComparison('date2', this.value)">
+                            {% for d in available_dates %}
+                            <option value="{{ d }}" {% if d == date2 %}selected{% endif %}>{{ d }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-header">Position Count Change</div>
-                <div class="card-value">
-                    {% if comparison.position_count_change >= 0 %}+{% endif %}{{ comparison.position_count_change }}
+            <div class="delta-cards">
+                <div class="delta-card {% if comparison.portfolio_change >= 0 %}positive{% else %}negative{% endif %}">
+                    <div class="delta-label">Portfolio</div>
+                    <div class="delta-value">
+                        {% if comparison.portfolio_change > 0 %}+{% endif %}{{ comparison.portfolio_change | format_currency('USD') }}
+                    </div>
+                    <div class="delta-sub {{ 'pos' if comparison.portfolio_change >= 0 else 'neg' }}">
+                        {% set pct = 0 %}
+                        {% if comparison.summary2.total_portfolio_value_usd > 0 %}
+                            {% set pct = (comparison.portfolio_change / comparison.summary2.total_portfolio_value_usd) * 100 %}
+                        {% endif %}
+                        {% if pct > 0 %}+{% elif pct < 0 %}-{% endif %}{{ pct | abs | format_percent }}
+                    </div>
                 </div>
-                <div class="card-subtext">
-                    {{ comparison.summary2.position_count }} → {{ comparison.summary1.position_count }}
+                <div class="delta-card {% if comparison.cash_change >= 0 %}positive{% else %}negative{% endif %}">
+                    <div class="delta-label">Cash</div>
+                    <div class="delta-value">
+                        {% if comparison.cash_change > 0 %}+{% endif %}{{ comparison.cash_change | format_currency('USD') }}
+                    </div>
+                    <div class="delta-sub {{ 'pos' if comparison.cash_change >= 0 else 'neg' }}">
+                        {% set pct = 0 %}
+                        {% if comparison.summary2.total_cash_usd > 0 %}
+                            {% set pct = (comparison.cash_change / comparison.summary2.total_cash_usd) * 100 %}
+                        {% endif %}
+                        {% if pct > 0 %}+{% elif pct < 0 %}-{% endif %}{{ pct | abs | format_percent }}
+                    </div>
+                </div>
+                <div class="delta-card {% if comparison.positions_change >= 0 %}positive{% else %}negative{% endif %}">
+                    <div class="delta-label">Positions</div>
+                    <div class="delta-value">
+                        {% if comparison.positions_change > 0 %}+{% endif %}{{ comparison.positions_change | format_currency('USD') }}
+                    </div>
+                    <div class="delta-sub {{ 'pos' if comparison.positions_change >= 0 else 'neg' }}">
+                        {% set pct = 0 %}
+                        {% if comparison.summary2.total_positions_value_usd > 0 %}
+                            {% set pct = (comparison.positions_change / comparison.summary2.total_positions_value_usd) * 100 %}
+                        {% endif %}
+                        {% if pct > 0 %}+{% elif pct < 0 %}-{% endif %}{{ pct | abs | format_percent }}
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Side-by-Side Comparison -->
-    <div class="section">
+    <div class="section compare-table-card">
         <h3 class="section-title">Detailed Comparison</h3>
 
         <div class="comparison-table-wrapper">
@@ -97,8 +94,7 @@
                         <td class="text-right">{{ comparison.summary2.total_portfolio_value_usd | format_currency('USD') }}</td>
                         <td class="text-right">{{ comparison.summary1.total_portfolio_value_usd | format_currency('USD') }}</td>
                         <td class="text-right {% if comparison.portfolio_change >= 0 %}positive{% else %}negative{% endif %}">
-                            {{ comparison.portfolio_change | format_currency('USD') }}
-                            ({{ comparison.portfolio_change_pct | format_percent }})
+                            {{ comparison.portfolio_change | format_currency('USD') }} ({{ comparison.portfolio_change_pct | format_percent }})
                         </td>
                     </tr>
 
@@ -158,9 +154,8 @@
     </div>
 
     <!-- Cash by Currency Comparison -->
-    <div class="section">
+    <div class="section compare-table-card">
         <h3 class="section-title">Cash Holdings by Currency</h3>
-
         <div class="comparison-table-wrapper">
             <table class="comparison-table">
                 <thead>

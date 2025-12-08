@@ -53,11 +53,12 @@ class ExcelMetadataExtractor:
     def detect_metadata(self, path: Path) -> Optional[ExcelMetadata]:
         key = self._detect_broker_key(path)
 
-        # Try: preferred parser first (if detected), then fall back to all parsers.
+        # Parser order: hinted broker first (except TC), then other non-TC parsers, TC last.
         ordered_keys = []
-        if key:
+        if key and key != "TC":
             ordered_keys.append(key)
-        ordered_keys.extend(k for k in self._parsers if k not in ordered_keys)
+        ordered_keys.extend(k for k in self._parsers if k not in ordered_keys and k != "TC")
+        ordered_keys.append("TC")
 
         for parser_key in ordered_keys:
             parser = self._parsers[parser_key]
@@ -87,26 +88,38 @@ class ExcelMetadataExtractor:
 
     def _parse_ms(self, path: Path) -> Optional[ExcelMetadata]:
         df = self._load_excel_df(path, sheet_name=0, nrows=40)
-        stmt_candidate = df.iloc[2, 1] if df.shape[0] > 2 and df.shape[1] > 1 else None
-        stmt_date = self._normalize_date(str(stmt_candidate)) if pd.notna(stmt_candidate) else None
-
         account = None
-        search_region = df.iloc[:15, :5]
+        stmt_date = None
+        brand_hit = any(k in path.name.lower() for k in ["ms", "morgan", "optiondaily"])
+
+        search_region = df.iloc[:20, :8] if not df.empty else pd.DataFrame()
         for value in search_region.values.flatten():
-            if isinstance(value, str) and ("A/C" in value.upper() or "ACCOUNT" in value.upper()):
-                match = re.search(r'([A-Z0-9]{4,})', value)
-                if match:
-                    account = match.group(1)
-                    break
+            if isinstance(value, str):
+                upper = value.upper()
+                if any(tag in upper for tag in ["OPTIONDAILY", "OPTION DAILY", "TEN ASSET MANAGEMENT LIMITED", "MORGAN STANLEY"]):
+                    brand_hit = True
+                if ("A/C" in upper or "ACCOUNT" in upper) and re.search(r"[A-Z0-9]{4,}", upper):
+                    account = account or re.search(r"([A-Z0-9]{4,})", upper).group(1)
+                if "VALUATION DATE" in upper or re.search(r"\d{2}-[A-Za-z]{3}-\d{4}", upper):
+                    stmt_date = stmt_date or self._normalize_date(upper.split(":")[-1].strip())
+            elif isinstance(value, datetime):
+                stmt_date = stmt_date or value.strftime("%Y-%m-%d")
+
+        if not (brand_hit and account and stmt_date):
+            return None
         return ExcelMetadata("MORGAN STANLEY", account, stmt_date)
 
     def _parse_gs(self, path: Path) -> Optional[ExcelMetadata]:
         df = self._load_excel_df(path, sheet_name=0, nrows=40)
         account = None
         stmt_date = None
+        brand_hit = "gs" in path.name.lower() or "goldman" in path.name.lower()
+
         for value in df.values.flatten():
             if isinstance(value, str):
                 upper = value.upper()
+                if "GOLDMAN" in upper or "GS PB" in upper:
+                    brand_hit = True
                 if "ACCOUNT" in upper or "A/C" in upper:
                     match = re.search(r'\(([A-Z0-9]+)\)', value)
                     if not match:
@@ -121,9 +134,13 @@ class ExcelMetadataExtractor:
                 digits = str(value).replace(".0", "")
                 if digits.isdigit():
                     account = digits
+
+        if not (brand_hit and account and stmt_date):
+            return None
         return ExcelMetadata("GOLDMAN SACHS", account, stmt_date)
 
     def _parse_tenfund(self, path: Path) -> Optional[ExcelMetadata]:
+        brand_hit = "tenfund" in path.name.lower() or "ten fund" in path.name.lower()
         wb = load_workbook(path, read_only=True, data_only=True)
         ws = wb.active
         stmt_date = None
@@ -133,12 +150,28 @@ class ExcelMetadataExtractor:
                 if isinstance(value, datetime):
                     stmt_date = value.strftime("%Y-%m-%d")
                     break
+                if isinstance(value, str) and "TEN FUND" in value.upper():
+                    brand_hit = True
             if stmt_date:
                 break
         wb.close()
+        if not brand_hit:
+            return None
         return ExcelMetadata("TEN FUND", None, stmt_date)
 
     def _parse_trade_confirmation(self, path: Path) -> Optional[ExcelMetadata]:
+        # Table-shape guard: TC headers must be present to avoid misrouting.
+        tc_headers = {"TRADE DATE", "BUY/SELL", "STOCK CODE", "QUANTITY", "AVG. PRICE", "AMOUNT (USD)"}
+        shape_matches_tc = False
+        try:
+            df_head = pd.read_excel(path, sheet_name=0, nrows=5)
+            cols = {str(c).strip().upper() for c in df_head.columns}
+            row0 = {str(v).strip().upper() for v in df_head.iloc[0].tolist() if pd.notna(v)} if df_head.shape[0] > 0 else set()
+            if len(tc_headers & cols) >= 3 or len(tc_headers & row0) >= 3:
+                shape_matches_tc = True
+        except Exception:
+            shape_matches_tc = False
+
         # Minimal TC support: infer date from filename first; fall back to sheet inspection.
         name = path.name
         stmt_date = None
@@ -161,6 +194,8 @@ class ExcelMetadataExtractor:
                         stmt_date = norm[:10]
                         break
 
+        if not shape_matches_tc:
+            return None
         return ExcelMetadata("TC", None, stmt_date)
 
     def _parse_gspb(self, path: Path) -> Optional[ExcelMetadata]:
@@ -237,6 +272,11 @@ class ExcelMetadataExtractor:
                 if sibling_md:
                     account = account or sibling_md.account_id
                     stmt_date = stmt_date or sibling_md.statement_date
+        # Require at least brand + (account or date) to avoid misclassifying TC/others.
+        name_lower = path.name.lower().replace(" ", "")
+        brand_hit = "gspb" in name_lower or "gspb" in path.parent.name.lower().replace(" ", "")
+        if not brand_hit or (not account and not stmt_date):
+            return None
         return ExcelMetadata(broker, account, stmt_date)
 
     def _normalize_date(self, value: str) -> Optional[str]:

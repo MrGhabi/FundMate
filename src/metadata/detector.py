@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any, List, Iterable
 from loguru import logger
 
 try:
-    from pypdf import PdfReader
+    from pypdf import PdfReader, PdfWriter
 except ImportError:  # pragma: no cover
     PdfReader = None
 
@@ -146,13 +146,14 @@ class StatementMetadataDetector:
     def _prepare_pdf_for_detection(self, path: Path) -> Path:
         """Decrypt PDF into a temporary file when password is known.
 
-        Keeps original path if not encrypted or password missing; cleans up temp file via NamedTemporaryFile.
+        Raises when encrypted and password is unavailable to avoid futile LLM calls.
+        Keeps original path if not encrypted; cleans up temp file via NamedTemporaryFile.
         """
         try:
             reader = PdfReader(str(path))
         except Exception as exc:
             logger.warning(f"Cannot open PDF {path} for decrypt check: {exc}")
-            return path
+            raise
 
         if not reader.is_encrypted:
             return path
@@ -160,17 +161,14 @@ class StatementMetadataDetector:
         broker_key = path.parent.name.upper()
         password = BROKER_CONFIG.get(broker_key, {}).get("password")
         if not password:
-            logger.warning(f"Encrypted PDF without password config for {broker_key}: {path}")
-            return path
+            raise ValueError(f"Encrypted PDF without password configuration (parent folder: {broker_key})")
 
         try:
             decrypt_status = reader.decrypt(password)
             if decrypt_status == 0:
-                logger.warning(f"Failed to decrypt PDF for {broker_key} with configured password: {path}")
-                return path
+                raise ValueError(f"Failed to decrypt PDF with configured password for {broker_key}")
         except Exception as exc:
-            logger.warning(f"Decrypt error for {broker_key} ({path}): {exc}")
-            return path
+            raise ValueError(f"Decrypt error for {broker_key}: {exc}") from exc
 
         writer = PdfWriter()
         for page in reader.pages:
