@@ -558,10 +558,17 @@ class ExcelPositionParser:
             col_desc = find_col("Description")
             col_symbol = find_col("Symbol") or find_col("Cusip") or find_col("Sedol")
             col_qty = find_col("Trade Date Quantity") or find_col("Quantity")
-            col_price = find_col("Market Price")
-            col_value = find_col("Market Value")
-            col_currency = find_col("Base Curr")
+            # GSPB positions must use local currency and local market price
+            col_price_local = find_col("Market Price(Local)")
+            col_value_local = find_col("Market Value(local)")
+            col_currency_local = find_col("Local Currency")
             col_account = find_col("Advisor") or find_col("Account")
+
+            # Strict requirement: local currency and local price columns must exist
+            if not col_currency_local or not col_price_local:
+                raise ValueError(
+                    f"GSPB positions sheet missing required Local Currency/Market Price(Local) columns: {header}"
+                )
 
             for _, row in data.iterrows():
                 row_dict = {header[i]: row.iloc[i] if i < len(row) else None for i in range(len(header))}
@@ -574,18 +581,28 @@ class ExcelPositionParser:
                 except Exception:
                     qty = 0.0
                 try:
-                    price = float(str(row_dict.get(col_price, "0")).replace(",", "")) if col_price else None
+                    price = float(str(row_dict.get(col_price_local, "0")).replace(",", "")) if col_price_local else None
                 except Exception:
                     price = None
                 try:
-                    market_value = float(str(row_dict.get(col_value, "0")).replace(",", "")) if col_value else None
+                    market_value = (
+                        float(str(row_dict.get(col_value_local, "0")).replace(",", ""))
+                        if col_value_local
+                        else None
+                    )
                 except Exception:
                     market_value = None
 
-                currency = str(row_dict.get(col_currency, "")).strip() if col_currency else None
+                currency = str(row_dict.get(col_currency_local, "")).strip() if col_currency_local else None
                 account_val = str(row_dict.get(col_account, "")).strip() if col_account else None
                 if account_val:
                     account_id = account_id or account_val
+
+                # If a real position row has no local currency, treat as fatal to avoid mispricing
+                if (desc or symbol) and qty != 0 and not currency:
+                    raise ValueError(
+                        f"GSPB position row missing Local Currency for {symbol or desc} (row={row_dict})"
+                    )
 
                 multiplier = 1.0
                 if price and qty:
