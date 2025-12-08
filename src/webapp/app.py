@@ -16,8 +16,16 @@ from werkzeug.utils import secure_filename
 import zipfile
 import re
 import math
+import shutil
+
+try:
+    import rarfile
+except ImportError:  # pragma: no cover
+    rarfile = None
 
 from src.config import settings
+from src.metadata.detector import StatementMetadataDetector, iter_files
+from src.metadata.organizer import MetadataRecord, organize_files
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 TEMPLATE_DIR = PACKAGE_ROOT / 'templates'
@@ -33,10 +41,11 @@ app = Flask(
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB max file size for ZIP files
-app.config['UPLOAD_FOLDER'] = Path('./data/uploads')
-app.config['ALLOWED_EXTENSIONS'] = {'pdf', 'xlsx', 'xls', 'zip'}
+app.config['UPLOAD_FOLDER'] = Path('./temp/uploads')  # Keep all validation in temp
+app.config['ALLOWED_EXTENSIONS'] = {'pdf', 'xlsx', 'xls', 'zip', 'rar'}
+METADATA_LLM_ENABLED = os.getenv('ENABLE_METADATA_LLM', 'true').lower() == 'true'
 
-# Create upload directory
+# Create upload directory (temp-only for validation)
 app.config['UPLOAD_FOLDER'].mkdir(parents=True, exist_ok=True)
 
 # Processing job tracking
@@ -72,6 +81,75 @@ def allowed_file(filename: str) -> bool:
     """Check if file extension is allowed"""
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+
+SKIP_PARTS = {'__MACOSX'}
+SKIP_NAMES = {'.DS_Store'}
+
+
+def _safe_target_path(base_dir: Path, member_name: str) -> Path:
+    """Prevent path traversal when extracting archives."""
+    target_path = (base_dir / member_name).resolve()
+    base_resolved = base_dir.resolve()
+    if not str(target_path).startswith(str(base_resolved)):
+        raise ValueError(f"Unsafe path detected in archive entry: {member_name}")
+    return target_path
+
+
+def _should_skip_member(name: str) -> bool:
+    path_obj = Path(name)
+    if any(part in SKIP_PARTS for part in path_obj.parts):
+        return True
+    if path_obj.name in SKIP_NAMES or path_obj.name.startswith('._'):
+        return True
+    return False
+
+
+def extract_archive(archive_path: Path, extract_to: Path) -> list[Path]:
+    """
+    Extract ZIP/RAR archive safely into extract_to.
+    Returns list of extracted file paths (allowed extensions only).
+    """
+    extracted_files: list[Path] = []
+    extract_to.mkdir(parents=True, exist_ok=True)
+    suffix = archive_path.suffix.lower()
+
+    if suffix == '.zip':
+        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            for info in zip_ref.infolist():
+                if info.is_dir():
+                    continue
+                if _should_skip_member(info.filename):
+                    continue
+                target = _safe_target_path(extract_to, info.filename)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zip_ref.open(info) as src, open(target, 'wb') as dst:
+                    shutil.copyfileobj(src, dst)
+                if target.is_file() and allowed_file(target.name):
+                    extracted_files.append(target)
+        return extracted_files
+
+    if suffix == '.rar':
+        if rarfile is None:
+            raise ValueError("RAR support requires 'rarfile' package to be installed")
+        if rarfile.UNRAR_TOOL is None:
+            # Try to default to system unrar if available
+            rarfile.UNRAR_TOOL = shutil.which('unrar')
+        with rarfile.RarFile(archive_path) as rar_ref:
+            for info in rar_ref.infolist():
+                if info.isdir():
+                    continue
+                if _should_skip_member(info.filename):
+                    continue
+                target = _safe_target_path(extract_to, info.filename)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with rar_ref.open(info) as src, open(target, 'wb') as dst:
+                    shutil.copyfileobj(src, dst)
+                if target.is_file() and allowed_file(target.name):
+                    extracted_files.append(target)
+        return extracted_files
+
+    raise ValueError(f"Unsupported archive type: {archive_path.suffix}")
 
 
 def detect_broker_from_filename(filename: str) -> Optional[str]:
@@ -639,13 +717,14 @@ def compare():
                          date1=date1,
                          date2=date2,
                          available_dates=available_dates,
-                         comparison=comparison)
+                         comparison=comparison,
+                         hide_date_selector=True)
 
 
 @app.route('/about')
 def about():
     """About page"""
-    return render_template('about.html')
+    return render_template('about.html', hide_date_selector=True)
 
 
 @app.route('/upload')
@@ -656,139 +735,216 @@ def upload_page():
 
 @app.route('/upload', methods=['POST'])
 def upload_files():
-    """Handle file uploads and initiate processing - supports batch upload with auto-detection"""
+    """Handle file uploads: save → safe extract → metadata detect → organize (temp-only).
+
+    Now uses background job + progress updates for real-time UI feedback.
+    """
     if 'files' not in request.files:
         return jsonify({'error': 'No files provided'}), 400
 
     files = request.files.getlist('files')
-    date = request.form.get('date')
-    auto_detect = request.form.get('auto_detect', 'true').lower() == 'true'
-    manual_broker = request.form.get('broker', '').upper() if not auto_detect else None
+    date = request.form.get('date') or None
 
-    # Validate inputs
     if not files or files[0].filename == '':
         return jsonify({'error': 'No files selected'}), 400
 
-    if not date:
-        return jsonify({'error': 'Date is required'}), 400
-
-    # Validate date format
-    try:
-        datetime.strptime(date, '%Y-%m-%d')
-    except ValueError:
-        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
-
-    # Validate file extensions
+    # Validate file extensions (upload-time gate, archives allowed here)
     for file in files:
         if not allowed_file(file.filename):
             return jsonify({'error': f'File type not allowed: {file.filename}'}), 400
 
-    # Create job ID
     job_id = str(uuid.uuid4())
+    base_dir = app.config['UPLOAD_FOLDER'] / job_id
+    incoming_dir = base_dir / 'incoming'
+    raw_dir = base_dir / 'raw'
+    organized_dir = base_dir / 'organized'
+    unclassified_dir = base_dir / 'unclassified'
+    for d in [incoming_dir, raw_dir, organized_dir, unclassified_dir]:
+        d.mkdir(parents=True, exist_ok=True)
 
-    # Create temporary upload directory
-    temp_dir = app.config['UPLOAD_FOLDER'] / 'temp' / job_id
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    # Try initialize LLM handler for PDF metadata; report if unavailable.
+    llm_handler = None
+    llm_error = None
+    if METADATA_LLM_ENABLED:
+        try:
+            from src.llm_handler import LLMHandler
+            llm_handler = LLMHandler()
+        except Exception as exc:  # pragma: no cover - environment dependent
+            llm_handler = None
+            llm_error = str(exc)
+    else:
+        llm_error = "LLM metadata detection disabled via ENABLE_METADATA_LLM"
 
-    # Save and process uploaded files
-    all_files = []
-    zip_files = []
+    detector = StatementMetadataDetector(llm_handler=llm_handler)
+    saved_archives: list[Path] = []
+    saved_regular: list[Path] = []
 
-    try:
-        for file in files:
-            if file and file.filename:
-                filename = secure_filename(file.filename)
-                filepath = temp_dir / filename
-                file.save(str(filepath))
+    def _run_metadata_job():
+        try:
+            with processing_lock:
+                processing_jobs[job_id].update({
+                    'status': 'processing',
+                    'progress': 10,
+                    'message': 'Extracting uploads...',
+                })
 
-                # Check if it's a ZIP file
-                if filename.lower().endswith('.zip'):
-                    zip_files.append(filepath)
+            extracted_paths: list[Path] = []
+
+            # Extract archives
+            for archive_path in saved_archives:
+                extracted_paths.extend(extract_archive(archive_path, raw_dir))
+
+            # Copy regular files into raw_dir
+            for file_path in saved_regular:
+                target = raw_dir / file_path.name
+                shutil.copy2(file_path, target)
+                extracted_paths.append(target)
+
+            candidate_files = iter_files(raw_dir)
+            if not candidate_files:
+                raise ValueError('No valid files found after extraction')
+
+            total = len(candidate_files)
+            detection_results = []
+            recognized_records: list[MetadataRecord] = []
+            unclassified_files: list[Path] = []
+            error_count = 0
+
+            for idx, path in enumerate(candidate_files, 1):
+                try:
+                    if path.suffix.lower() == '.pdf' and llm_handler is None:
+                        raise RuntimeError(f"LLM handler unavailable for PDF metadata: {llm_error}")
+                    md = detector.detect_file(path)
+                except Exception as e:
+                    detection_results.append({
+                        'file': str(path),
+                        'status': 'error',
+                        'error': str(e),
+                        'broker': None,
+                        'account_id': None,
+                        'statement_date': None,
+                        'source': None,
+                    })
+                    unclassified_files.append(path)
+                    error_count += 1
                 else:
-                    all_files.append(filepath)
+                    if md and md.broker_name and md.statement_date:
+                        recognized_records.append(
+                            MetadataRecord(
+                                file=Path(md.file),
+                                broker_name=md.broker_name,
+                                account_id=md.account_id,
+                                statement_date=md.statement_date,
+                            )
+                        )
+                        detection_results.append({
+                            'file': str(path),
+                            'status': 'recognized',
+                            'broker': md.broker_name,
+                            'account_id': md.account_id,
+                            'statement_date': md.statement_date,
+                            'source': md.source,
+                        })
+                    else:
+                        detection_results.append({
+                            'file': str(path),
+                            'status': 'unclassified',
+                            'broker': md.broker_name if md else None,
+                            'account_id': md.account_id if md else None,
+                            'statement_date': md.statement_date if md else None,
+                            'source': md.source if md else None,
+                        })
+                        unclassified_files.append(path)
 
-        # Extract ZIP files
-        for zip_path in zip_files:
-            try:
-                extracted = extract_zip_file(zip_path, temp_dir)
-                all_files.extend(extracted)
-            except ValueError as e:
-                return jsonify({'error': str(e)}), 400
+                # Progress update
+                with processing_lock:
+                    processing_jobs[job_id]['progress'] = 10 + int(idx / total * 80)
+                    processing_jobs[job_id]['message'] = f"Detecting metadata {idx}/{total}: {path.name}"
 
-        if not all_files:
-            return jsonify({'error': 'No valid files found (after extracting ZIPs)'}), 400
+            # Organize recognized files into canonical names under temp/organized
+            if recognized_records:
+                organize_files(recognized_records, organized_dir, dry_run=False)
 
-        # Organize files by broker
-        if auto_detect:
-            broker_files, undetected = organize_files_by_broker(
-                all_files, date, app.config['UPLOAD_FOLDER']
+            # Move unclassified files into a dedicated folder for user review
+            for path in unclassified_files:
+                target = _safe_target_path(unclassified_dir, path.name)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if path != target:
+                    shutil.move(str(path), target)
+
+            message = (
+                f"Metadata detection finished. Recognized: {len(recognized_records)}, "
+                f"Unclassified: {len(unclassified_files)}, Errors: {error_count}"
             )
 
-            if undetected:
-                undetected_names = [f.name for f in undetected]
-                return jsonify({
-                    'error': f'Could not detect broker for files: {", ".join(undetected_names)}. '
-                             'Please rename files to include broker name or use manual mode.'
-                }), 400
-
-            if not broker_files:
-                return jsonify({'error': 'No broker could be detected from filenames'}), 400
-
-        else:
-            # Manual mode - use provided broker name
-            if not manual_broker:
-                return jsonify({'error': 'Broker name is required when auto-detect is disabled'}), 400
-
-            broker_dir = app.config['UPLOAD_FOLDER'] / manual_broker / date
-            broker_dir.mkdir(parents=True, exist_ok=True)
-
-            # Move all files to broker directory
-            import shutil
-            for file_path in all_files:
-                new_path = broker_dir / file_path.name
-                shutil.move(str(file_path), str(new_path))
-
-            broker_files = {manual_broker: all_files}
-
-        # Initialize job status
-        with processing_lock:
-            processing_jobs[job_id] = {
-                'status': 'pending',
-                'brokers': list(broker_files.keys()),
-                'date': date,
-                'broker_files': {broker: [str(f) for f in files] for broker, files in broker_files.items()},
-                'progress': 0,
-                'message': 'Job queued',
-                'created_at': datetime.now().isoformat(),
-                'result': None,
-                'error': None,
-                'auto_detect': auto_detect
+            result_payload = {
+                'organized_dir': str(organized_dir),
+                'unclassified_dir': str(unclassified_dir),
+                'recognized_count': len(recognized_records),
+                'unclassified_count': len(unclassified_files),
+                'detection_results': detection_results,
+                'llm_error': llm_error,
+                'error_count': error_count,
             }
 
-        # Start processing in background thread
-        thread = threading.Thread(
-            target=process_multiple_brokers,
-            args=(job_id, broker_files, date, str(app.config['UPLOAD_FOLDER']))
-        )
-        thread.daemon = True
-        thread.start()
+            with processing_lock:
+                processing_jobs[job_id].update({
+                    'status': 'completed',
+                    'message': message,
+                    'progress': 100,
+                    'result': result_payload,
+                    'error': None,
+                })
 
-        broker_list = ', '.join(broker_files.keys())
-        total_files = sum(len(files) for files in broker_files.values())
+        except Exception as e:
+            with processing_lock:
+                processing_jobs[job_id].update({
+                    'status': 'failed',
+                    'error': str(e),
+                    'message': f'Failed: {e}',
+                    'progress': 100,
+                })
 
-        return jsonify({
-            'job_id': job_id,
-            'status': 'processing',
-            'brokers': list(broker_files.keys()),
-            'message': f'Processing {total_files} file(s) for {len(broker_files)} broker(s): {broker_list}'
-        })
-
+    # Save uploads synchronously before background job (avoid closed file handles)
+    try:
+        for file in files:
+            if not file or not file.filename:
+                continue
+            filename = secure_filename(file.filename)
+            incoming_path = incoming_dir / filename
+            file.save(str(incoming_path))
+            if incoming_path.suffix.lower() in {'.zip', '.rar'}:
+                saved_archives.append(incoming_path)
+            else:
+                saved_regular.append(incoming_path)
     except Exception as e:
-        # Clean up temp directory on error
-        import shutil
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir)
-        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+        if base_dir.exists():
+            shutil.rmtree(base_dir)
+        return jsonify({'error': f'Failed to save uploads: {e}'}), 500
+
+    # Initialize job before kicking off background detection
+    with processing_lock:
+        processing_jobs[job_id] = {
+            'status': 'processing',
+            'date': date,
+            'created_at': datetime.now().isoformat(),
+            'message': 'Queued',
+            'result': None,
+            'error': None,
+            'job_type': 'metadata_only',
+            'progress': 10,
+        }
+
+    # Start background thread
+    thread = threading.Thread(target=_run_metadata_job, daemon=True)
+    thread.start()
+
+    return jsonify({
+        'job_id': job_id,
+        'status': 'processing',
+        'message': 'Queued metadata detection',
+        'progress': 5,
+    })
 
 
 @app.route('/api/jobs/<job_id>')
@@ -812,9 +968,11 @@ def list_jobs():
                 'job_id': job_id,
                 'broker': job.get('broker'),  # For old single-broker jobs
                 'brokers': job.get('brokers'),  # For new multi-broker jobs
-                'date': job['date'],
-                'status': job['status'],
-                'created_at': job['created_at']
+                'date': job.get('date'),
+                'status': job.get('status'),
+                'created_at': job.get('created_at'),
+                'result': job.get('result'),
+                'message': job.get('message')
             }
             for job_id, job in processing_jobs.items()
         ]

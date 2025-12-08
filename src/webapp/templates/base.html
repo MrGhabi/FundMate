@@ -27,6 +27,7 @@
     </nav>
 
     <main class="container">
+        {% if request.endpoint != 'upload_page' and not hide_date_selector %}
         <div class="date-selector">
             <div class="date-control">
                 <label for="date-input">Select Date</label>
@@ -37,6 +38,7 @@
                 <div id="date-status" class="date-status"></div>
             </div>
         </div>
+        {% endif %}
 
         {% block content %}{% endblock %}
     </main>
