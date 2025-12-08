@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Cash Holdings - FundMate{% endblock %}
+{% block title %}Cash Holdings - LedgerFlow{% endblock %}
 
 {% block content %}
 <div class="cash-page">
@@ -21,11 +21,11 @@
     </div>
 
     <!-- Exchange Rates Info -->
-    {% if metadata and metadata.exchange_rates %}
+    {% if exchange_rates_usd_base %}
     <div class="section info-box">
         <h3 class="section-title">Exchange Rates (USD Base)</h3>
         <div class="exchange-rates">
-            {% for currency, rate in metadata.exchange_rates.items() %}
+            {% for currency, rate in exchange_rates_usd_base.items() %}
             <div class="rate-item">
                 <span class="currency">USD → {{ currency }}:</span>
                 <span class="rate">{{ rate | format_number }}</span>

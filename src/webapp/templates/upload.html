@@ -1,32 +1,51 @@
 {% extends "base.html" %}
 
-{% block title %}Upload Statements - FundMate{% endblock %}
+{% block title %}Upload Statements - LedgerFlow{% endblock %}
 
 {% block extra_css %}
 <style>
+    :root {
+        --bg: var(--background);
+        --card: var(--surface);
+        --border: var(--border-color);
+        --text: var(--text-primary);
+        --muted: var(--text-secondary);
+        --accent: var(--primary-color);
+        --accent-light: #d7ebe5;
+        --success: #16a34a;
+        --success-light: #e7f7ed;
+        --danger: #dc2626;
+        --danger-light: #feecec;
+        --warning: #d97706;
+        --warning-light: #fff7ed;
+    }
+
+    body { background: var(--bg); }
+
     .upload-container {
-        max-width: 800px;
+        max-width: 1200px;
         margin: 2rem auto;
         padding: 2rem;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        background: var(--card);
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+        border: 1px solid var(--border);
     }
 
     .upload-zone {
-        border: 2px dashed #ccc;
-        border-radius: 8px;
-        padding: 3rem;
+        border: 2px dashed var(--border);
+        border-radius: 12px;
+        padding: 2.5rem;
         text-align: center;
         cursor: pointer;
-        transition: all 0.3s ease;
-        background: #f9f9f9;
+        transition: all 0.25s ease;
+        background: #fafbff;
     }
 
     .upload-zone:hover,
     .upload-zone.drag-over {
-        border-color: #4CAF50;
-        background: #f0f8f0;
+        border-color: var(--accent);
+        background: var(--accent-light);
     }
 
     .upload-zone.disabled {
@@ -36,31 +55,34 @@
 
     .upload-icon {
         font-size: 3rem;
-        color: #999;
+        color: var(--muted);
         margin-bottom: 1rem;
     }
 
     .file-list {
         margin-top: 1rem;
         padding: 1rem;
-        background: #f5f5f5;
-        border-radius: 4px;
-        max-height: 200px;
+        background: #f8fafc;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        max-height: 240px;
         overflow-y: auto;
+        font-size: 0.95rem;
     }
 
     .file-item {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0.5rem;
+        padding: 0.5rem 0.75rem;
         margin: 0.25rem 0;
-        background: white;
-        border-radius: 4px;
+        background: #fff;
+        border-radius: 6px;
+        border: 1px solid var(--border);
     }
 
     .file-item button {
-        background: #f44336;
+        background: var(--danger);
         color: white;
         border: none;
         padding: 0.25rem 0.75rem;
@@ -88,184 +110,266 @@
     }
 
     .btn-submit {
-        background: #4CAF50;
-        color: white;
-        padding: 1rem 2rem;
+        background: var(--accent-light);
+        color: var(--accent);
+        padding: 0.9rem 1.2rem;
         border: none;
-        border-radius: 4px;
+        border-radius: 8px;
         font-size: 1rem;
         cursor: pointer;
         width: 100%;
         margin-top: 1rem;
+        transition: all 0.2s ease;
+        box-shadow: 0 6px 14px rgba(0,0,0,0.06);
+    }
+
+    .btn-submit:hover {
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 10px 18px rgba(0,0,0,0.12);
     }
 
     .btn-submit:disabled {
-        background: #ccc;
+        background: #cbd5e1;
+        color: #fff;
         cursor: not-allowed;
+        box-shadow: none;
+    }
+
+    .btn-secondary {
+        background: var(--accent-light);
+        color: var(--accent);
+        padding: 0.6rem 1rem;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-right: 0.75rem;
+        transition: all 0.2s ease;
+        box-shadow: 0 6px 14px rgba(0,0,0,0.06);
+    }
+
+    .btn-secondary:hover {
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 10px 18px rgba(0,0,0,0.12);
     }
 
     .progress-container {
         margin-top: 1rem;
         padding: 1rem;
-        background: #f5f5f5;
-        border-radius: 4px;
+        background: #f8fafc;
+        border-radius: 8px;
+        border: 1px solid var(--border);
         display: none;
     }
 
     .progress-bar {
-        height: 30px;
-        background: #e0e0e0;
-        border-radius: 4px;
+        height: 18px;
+        background: #e5e7eb;
+        border-radius: 999px;
         overflow: hidden;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.6rem;
+        position: relative;
     }
 
     .progress-fill {
         height: 100%;
-        background: #4CAF50;
+        background: var(--accent);
         transition: width 0.3s ease;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 18px;
+        text-indent: 8px;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+    }
+
+    .progress-fill.indeterminate {
+        position: relative;
+        overflow: hidden;
+        width: 100% !important;
+        background: linear-gradient(90deg, rgba(37,99,235,0.35) 25%, rgba(37,99,235,0.65) 50%, rgba(37,99,235,0.35) 75%);
+        background-size: 200% 100%;
+        animation: indeterminate 1.2s linear infinite;
+    }
+
+    @keyframes indeterminate {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    .progress-meta {
         display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-weight: 600;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+    }
+
+    .progress-meta .strong {
+        color: var(--text);
+        font-weight: 700;
     }
 
     .job-status {
-        padding: 1rem;
+        padding: 0.85rem 1rem;
         margin-top: 1rem;
-        border-radius: 4px;
+        border-radius: 8px;
+        font-weight: 600;
     }
 
-    .job-status.success {
-        background: #d4edda;
-        color: #155724;
-    }
+    .job-status.success { background: var(--success-light); color: var(--success); }
+    .job-status.error { background: var(--danger-light); color: var(--danger); }
+    .job-status.processing { background: var(--accent-light); color: var(--accent); }
 
-    .job-status.error {
-        background: #f8d7da;
-        color: #721c24;
+    .job-history { margin-top: 2rem; }
+    .job-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 0.75rem;
     }
-
-    .job-status.processing {
-        background: #d1ecf1;
-        color: #0c5460;
-    }
-
-    .job-history {
-        margin-top: 2rem;
-        padding-top: 2rem;
-        border-top: 2px solid #eee;
-    }
-
     .job-card {
-        padding: 1rem;
-        margin: 0.5rem 0;
-        background: #f9f9f9;
-        border-radius: 4px;
-        border-left: 4px solid #ccc;
+        padding: 0.9rem 1rem;
+        background: #fff;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
     }
+    .job-card .title { font-weight: 700; color: var(--text); }
+    .job-card .meta { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; line-height: 1.4; }
+    .badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; }
+    .badge.success { background: var(--success-light); color: var(--success); }
+    .badge.failed { background: var(--danger-light); color: var(--danger); }
+    .badge.partial, .badge.processing { background: var(--accent-light); color: var(--accent); }
 
-    .job-card.completed {
-        border-left-color: #4CAF50;
-    }
-
-    .job-card.failed {
-        border-left-color: #f44336;
-    }
-
-    .job-card.processing {
-        border-left-color: #2196F3;
-    }
-
-    .helper-text {
-        font-size: 0.875rem;
-        color: #666;
-        margin-top: 0.25rem;
-    }
-
-    .broker-list {
-        font-size: 0.875rem;
-        color: #666;
-        margin-top: 0.5rem;
-    }
-
-    .detected-brokers {
-        margin-top: 1rem;
-        padding: 1rem;
-        background: #e8f5e9;
-        border-radius: 4px;
-        border-left: 4px solid #4CAF50;
-    }
-
-    .detected-brokers h4 {
-        margin: 0 0 0.5rem 0;
-        color: #2e7d32;
-    }
-
-    .broker-badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        margin: 0.25rem;
-        background: #4CAF50;
-        color: white;
+    .detection-results {
+        margin-top: 1.5rem;
+        padding: 1.25rem;
+        background: #fff;
         border-radius: 12px;
-        font-size: 0.875rem;
+        border: 1px solid var(--border);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.05);
     }
 
-    label input[type="checkbox"] {
-        margin-right: 0.5rem;
+    .detection-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 0.5rem;
     }
+
+    .stat-pills { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .pill {
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        font-weight: 700;
+        font-size: 0.9rem;
+        border: 1px solid var(--border);
+        background: #f8fafc;
+    }
+    .pill.green { color: var(--success); background: var(--success-light); border-color: #c6f2d7; }
+    .pill.amber { color: var(--warning); background: var(--warning-light); border-color: #f7d7a2; }
+    .pill.red { color: var(--danger); background: var(--danger-light); border-color: #f8c4c4; }
+
+    .detection-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0.75rem;
+        font-size: 0.95rem;
+    }
+
+    .detection-table th,
+    .detection-table td {
+        padding: 0.65rem 0.5rem;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        vertical-align: top;
+    }
+
+    .detection-table th {
+        background: #f8fafc;
+        font-weight: 700;
+        color: var(--muted);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        font-size: 0.9rem;
+    }
+
+    .detection-table tbody tr:hover {
+        background: #f9fbff;
+    }
+
+    .detection-table td.file-cell,
+    .detection-table td.error-cell {
+        word-break: break-word;
+        white-space: pre-wrap;
+        max-width: 420px;
+        font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 0.92rem;
+        color: #0f172a;
+    }
+
+    .detection-table td.center {
+        text-align: center;
+        width: 130px;
+        font-weight: 700;
+        color: #111827;
+        font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    /* Align broker/date/account to the left for readability */
+    .detection-table th:nth-child(3),
+    .detection-table th:nth-child(4),
+    .detection-table th:nth-child(5),
+    .detection-table td:nth-child(3),
+    .detection-table td:nth-child(4),
+    .detection-table td:nth-child(5) {
+        text-align: left;
+    }
+
+    .tag {
+        display: inline-block;
+        padding: 0.15rem 0.5rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    .tag.recognized { background: #dbeafe; color: #1d4ed8; }
+    .tag.unclassified { background: #fff3e0; color: #b45309; }
+    .tag.error { background: #ffebee; color: #c62828; }
+    .tag.excel-source { background: #e0f2fe; color: #0369a1; }
+    .tag.llm-source { background: #ede9fe; color: #5b21b6; }
+
+    label input[type="checkbox"] { margin-right: 0.5rem; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="upload-container">
     <h2>Upload Broker Statements</h2>
-    <p>Batch upload: Drop ZIP files or multiple broker statements - broker names will be detected automatically!</p>
+    <p>Batch upload ZIP/RAR/PDF/Excel. Files are content-scanned (metadata) to detect broker/date/account and renamed to canonical form.</p>
 
     <form id="uploadForm" enctype="multipart/form-data">
         <div class="form-group">
-            <label>
-                <input type="checkbox" id="autoDetect" name="auto_detect" checked>
-                Auto-detect brokers from filenames (recommended)
-            </label>
-            <p class="helper-text">
-                Files will be automatically organized by broker. Ensure filenames contain broker name (e.g., "IB_Statement.pdf", "FUTU_Feb.xlsx")
-            </p>
-        </div>
-
-        <div class="form-group" id="manualBrokerGroup" style="display: none;">
-            <label for="broker">Broker Name (Manual Mode) *</label>
-            <input type="text" id="broker" name="broker" placeholder="e.g., IB, MOOMOO, FUTU">
-            <p class="helper-text">Required only when auto-detect is disabled. All files will be processed for this broker.</p>
-        </div>
-
-        <div class="form-group">
-            <label for="date">Statement Date *</label>
-            <input type="date" id="date" name="date" required>
-            <p class="helper-text">Select the date for which the statements apply</p>
-        </div>
-
-        <div class="form-group">
             <label>Files *</label>
-            <div id="dropZone" class="upload-zone">
+            <label id="dropZone" class="upload-zone" role="button" tabindex="0" aria-label="Upload files" for="fileInput">
                 <div class="upload-icon">📦</div>
                 <p><strong>Drag and drop files or ZIP archives here</strong></p>
                 <p>or click to browse</p>
-                <p class="helper-text">Accepted: PDF, XLSX, XLS, ZIP (Max 200MB)</p>
-                <p class="helper-text" style="margin-top: 0.5rem;">💡 <strong>Tip:</strong> Upload a ZIP containing all broker statements for batch processing!</p>
-            </div>
-            <input type="file" id="fileInput" name="files" multiple accept=".pdf,.xlsx,.xls,.zip" style="display: none;">
+                <p class="helper-text">Accepted: PDF, XLSX, XLS, ZIP, RAR (Max 200MB)</p>
+                <p class="helper-text" style="margin-top: 0.5rem;">💡 Broker detection is content-based; filenames do not need broker hints.</p>
+            </label>
+            <input type="file" id="fileInput" name="files" multiple accept=".pdf,.xlsx,.xls,.zip,.rar" style="display: none;">
 
             <div id="fileList" class="file-list" style="display: none;">
                 <!-- Files will be listed here -->
             </div>
 
-            <div id="detectedBrokers" class="detected-brokers" style="display: none;">
-                <h4>Detected Brokers:</h4>
-                <div id="brokerList"></div>
-            </div>
         </div>
 
         <button type="submit" id="submitBtn" class="btn-submit">Process Statements</button>
@@ -275,11 +379,44 @@
         <div class="progress-bar">
             <div id="progressFill" class="progress-fill" style="width: 0%">0%</div>
         </div>
-        <p id="progressMessage">Starting...</p>
+            <div class="progress-meta">
+                <span id="progressMessage" class="strong">Starting...</span>
+                <span id="progressDetail"></span>
+            </div>
     </div>
 
     <div id="jobStatus" class="job-status" style="display: none;">
         <!-- Status message will appear here -->
+    </div>
+
+    <div id="detectionResults" class="detection-results" style="display: none;">
+        <div class="detection-header">
+            <div>
+                <h3 style="margin:0;">Metadata Detection Results</h3>
+                <div id="detectionSummary" class="helper-text"></div>
+            </div>
+            <div class="stat-pills">
+                <span class="pill green" id="pillRecognized">Recognized: 0</span>
+                <span class="pill amber" id="pillUnclassified">Unclassified: 0</span>
+                <span class="pill red" id="pillErrors">Errors: 0</span>
+            </div>
+        </div>
+        <table class="detection-table">
+            <thead>
+                <tr>
+                    <th style="width:40px;">#</th>
+                    <th>File</th>
+                    <th>Broker</th>
+                    <th>Date</th>
+                    <th>Account</th>
+                    <th>Status</th>
+                    <th>Source</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody id="detectionTableBody"></tbody>
+        </table>
+        <p class="helper-text" id="organizedHint"></p>
     </div>
 
     <div class="job-history">
@@ -293,6 +430,7 @@
 
 {% block extra_js %}
 <script>
+    (function() {
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
     const fileList = document.getElementById('fileList');
@@ -302,51 +440,17 @@
     const progressFill = document.getElementById('progressFill');
     const progressMessage = document.getElementById('progressMessage');
     const jobStatus = document.getElementById('jobStatus');
-    const autoDetect = document.getElementById('autoDetect');
-    const manualBrokerGroup = document.getElementById('manualBrokerGroup');
-    const brokerInput = document.getElementById('broker');
-    const detectedBrokersDiv = document.getElementById('detectedBrokers');
-    const brokerListDiv = document.getElementById('brokerList');
+    const detectionResultsDiv = document.getElementById('detectionResults');
+    const detectionTableBody = document.getElementById('detectionTableBody');
+    const detectionSummary = document.getElementById('detectionSummary');
+    const organizedHint = document.getElementById('organizedHint');
+    const pillRecognized = document.getElementById('pillRecognized');
+    const pillUnclassified = document.getElementById('pillUnclassified');
+    const pillErrors = document.getElementById('pillErrors');
 
     let selectedFiles = [];
-    let currentJobId = null;
-    let pollInterval = null;
-    let detectedBrokers = new Set();
-
-    // Broker detection patterns (must match server-side)
-    const brokerPatterns = {
-        'IB': ['ib_', 'ib-', 'ib ', 'interactive', 'ibkr'],
-        'FUTU': ['futu', '富途'],
-        'MOOMOO': ['moomoo', 'moo_', 'moo-', 'moo ', '富牛'],
-        'MS': ['morgan_stanley', 'morgan-stanley', 'ms_', 'ms-', '摩根士丹利'],
-        'GS': ['goldman_sachs', 'goldman-sachs', 'gs_', 'gs-', '高盛'],
-        'SC': ['standard_chartered', 'standard-chartered', 'sc_', 'sc-', '渣打'],
-        'HSBC': ['hsbc', '汇丰'],
-        'CS': ['credit_suisse', 'credit-suisse', 'cs_', 'cs-', '瑞信'],
-        'LB': ['longbridge', 'lb_', 'lb-', '长桥'],
-        'SOFI': ['sofi'],
-        'UBS': ['ubs', '瑞银'],
-        'WB': ['webull', 'wb_', 'wb-', '微牛']
-    };
-
-    // Set default date to today
-    document.getElementById('date').valueAsDate = new Date();
-
-    // Toggle broker input based on auto-detect checkbox
-    autoDetect.addEventListener('change', function() {
-        if (this.checked) {
-            manualBrokerGroup.style.display = 'none';
-            brokerInput.removeAttribute('required');
-        } else {
-            manualBrokerGroup.style.display = 'block';
-            brokerInput.setAttribute('required', 'required');
-        }
-        updateDetectedBrokers();
-    });
 
     // Drag and drop handlers
-    dropZone.addEventListener('click', () => fileInput.click());
-
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         dropZone.classList.add('drag-over');
@@ -366,52 +470,9 @@
         handleFiles(e.target.files);
     });
 
-    function detectBrokerFromFilename(filename) {
-        const lowerName = filename.toLowerCase();
-        for (const [broker, patterns] of Object.entries(brokerPatterns)) {
-            for (const pattern of patterns) {
-                if (lowerName.includes(pattern)) {
-                    return broker;
-                }
-            }
-        }
-        return null;
-    }
-
     function handleFiles(files) {
         selectedFiles = Array.from(files);
-        updateDetectedBrokers();
         displayFileList();
-    }
-
-    function updateDetectedBrokers() {
-        detectedBrokers.clear();
-
-        if (autoDetect.checked) {
-            for (const file of selectedFiles) {
-                // Skip ZIP files for detection display
-                if (!file.name.toLowerCase().endsWith('.zip')) {
-                    const broker = detectBrokerFromFilename(file.name);
-                    if (broker) {
-                        detectedBrokers.add(broker);
-                    }
-                }
-            }
-
-            if (detectedBrokers.size > 0) {
-                detectedBrokersDiv.style.display = 'block';
-                brokerListDiv.innerHTML = Array.from(detectedBrokers)
-                    .map(broker => `<span class="broker-badge">${broker}</span>`)
-                    .join('');
-            } else if (selectedFiles.length > 0 && !selectedFiles.some(f => f.name.toLowerCase().endsWith('.zip'))) {
-                detectedBrokersDiv.style.display = 'block';
-                brokerListDiv.innerHTML = '<span style="color: #f44336;">⚠️ No brokers detected. Please rename files to include broker names.</span>';
-            } else {
-                detectedBrokersDiv.style.display = 'none';
-            }
-        } else {
-            detectedBrokersDiv.style.display = 'none';
-        }
     }
 
     function displayFileList() {
@@ -422,14 +483,14 @@
 
         fileList.style.display = 'block';
         fileList.innerHTML = selectedFiles.map((file, index) => {
-            const broker = detectBrokerFromFilename(file.name);
-            const brokerTag = broker ? `<span class="broker-badge" style="font-size: 0.75rem; margin-left: 0.5rem;">${broker}</span>` : '';
             const isZip = file.name.toLowerCase().endsWith('.zip');
+            const isRar = file.name.toLowerCase().endsWith('.rar');
             const zipTag = isZip ? '<span style="color: #2196F3; margin-left: 0.5rem;">📦 ZIP</span>' : '';
+            const rarTag = isRar ? '<span style="color: #6a1b9a; margin-left: 0.5rem;">🗜 RAR</span>' : '';
 
             return `
                 <div class="file-item">
-                    <span>${file.name} (${formatFileSize(file.size)})${brokerTag}${zipTag}</span>
+                    <span>${file.name} (${formatFileSize(file.size)})${zipTag}${rarTag}</span>
                     <button type="button" onclick="removeFile(${index})">Remove</button>
                 </div>
             `;
@@ -438,9 +499,9 @@
 
     function removeFile(index) {
         selectedFiles.splice(index, 1);
-        updateDetectedBrokers();
         displayFileList();
     }
+    window.removeFile = removeFile;
 
     function formatFileSize(bytes) {
         if (bytes < 1024) return bytes + ' B';
@@ -451,6 +512,10 @@
     uploadForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
+        if (selectedFiles.length === 0 && fileInput.files && fileInput.files.length > 0) {
+            selectedFiles = Array.from(fileInput.files);
+        }
+
         if (selectedFiles.length === 0) {
             alert('Please select at least one file');
             return;
@@ -458,24 +523,15 @@
 
         const formData = new FormData();
         selectedFiles.forEach(file => formData.append('files', file));
-        formData.append('auto_detect', autoDetect.checked ? 'true' : 'false');
-
-        if (!autoDetect.checked) {
-            const broker = document.getElementById('broker').value.toUpperCase();
-            if (!broker) {
-                alert('Please enter a broker name');
-                return;
-            }
-            formData.append('broker', broker);
-        }
-
-        formData.append('date', document.getElementById('date').value);
 
         // Disable form
         submitBtn.disabled = true;
         dropZone.classList.add('disabled');
         progressContainer.style.display = 'block';
+        updateProgress(10, 'Uploading...', true);
         jobStatus.style.display = 'none';
+        detectionResultsDiv.style.display = 'none';
+        detectionTableBody.innerHTML = '';
 
         try {
             const response = await fetch('/upload', {
@@ -486,9 +542,15 @@
             const data = await response.json();
 
             if (response.ok) {
-                currentJobId = data.job_id;
-                updateProgress(0, data.message);
-                startPolling();
+                if (data.job_id && data.status === 'processing') {
+                    startPolling(data.job_id);
+                } else if (data.status === 'completed') {
+                    updateProgress(100, 'Detection complete', false);
+                    showStatus('success', data.message || 'Completed');
+                    renderDetectionResults(data);
+                    loadJobHistory();
+                    resetForm();
+                }
             } else {
                 showStatus('error', data.error || 'Upload failed');
                 resetForm();
@@ -499,42 +561,52 @@
         }
     });
 
-    function startPolling() {
-        if (pollInterval) clearInterval(pollInterval);
-
-        pollInterval = setInterval(async () => {
+    function startPolling(jobId) {
+        let pollCount = 0;
+        const maxPolls = 300; // ~5 minutes at 1s
+        const timer = setInterval(async () => {
+            pollCount += 1;
             try {
-                const response = await fetch(`/api/jobs/${currentJobId}`);
-                const job = await response.json();
-
-                updateProgress(job.progress, job.message);
+                const res = await fetch(`/api/jobs/${jobId}`);
+                if (!res.ok) throw new Error('Job not found');
+                const job = await res.json();
+                const pct = Math.min(100, Math.max(0, job.progress || 0));
+                updateProgress(pct, job.message || 'Processing...', false);
 
                 if (job.status === 'completed') {
-                    clearInterval(pollInterval);
-                    showStatus('success', `✓ ${job.message}\n\nView results in the Dashboard`);
-                    resetForm();
+                    clearInterval(timer);
+                    showStatus('success', job.message || 'Completed');
+                    if (job.result) {
+                        renderDetectionResults(job.result);
+                    }
                     loadJobHistory();
-
-                    // Redirect to dashboard after 3 seconds
-                    setTimeout(() => {
-                        window.location.href = '/?date=' + job.date;
-                    }, 3000);
+                    resetForm();
                 } else if (job.status === 'failed') {
-                    clearInterval(pollInterval);
-                    showStatus('error', `✗ ${job.message}\n\nError: ${job.error || 'Unknown error'}`);
+                    clearInterval(timer);
+                    showStatus('error', job.message || 'Failed');
                     resetForm();
-                    loadJobHistory();
                 }
-            } catch (error) {
-                console.error('Polling error:', error);
+            } catch (err) {
+                if (pollCount >= maxPolls) {
+                    clearInterval(timer);
+                    showStatus('error', 'Polling timeout');
+                    resetForm();
+                }
             }
-        }, 2000);
+        }, 1000);
     }
 
-    function updateProgress(percent, message) {
-        progressFill.style.width = percent + '%';
-        progressFill.textContent = percent + '%';
-        progressMessage.textContent = message;
+    function updateProgress(percent, message, indeterminate=false) {
+        if (indeterminate) {
+            progressFill.classList.add('indeterminate');
+            progressFill.style.width = '100%';
+            progressFill.textContent = '';
+        } else {
+            progressFill.classList.remove('indeterminate');
+            progressFill.style.width = percent + '%';
+            progressFill.textContent = percent + '%';
+        }
+        progressMessage.textContent = formatProgressMessage(message);
     }
 
     function showStatus(type, message) {
@@ -548,7 +620,65 @@
         dropZone.classList.remove('disabled');
         selectedFiles = [];
         fileInput.value = '';
+        progressContainer.style.display = 'none';
+        updateProgress(0, 'Ready', false);
         displayFileList();
+    }
+
+    function formatProgressMessage(msg) {
+        const detailEl = document.getElementById('progressDetail');
+        if (!msg) {
+            detailEl.textContent = '';
+            return msg;
+        }
+        const detectMatch = msg.match(/Detecting metadata\s+(\d+)\/(\d+):\s*(.+)/i);
+        if (detectMatch) {
+            const step = detectMatch[1];
+            const total = detectMatch[2];
+            const fname = detectMatch[3];
+            detailEl.innerHTML = `<span class="strong">Step ${step} of ${total}</span> · <span>${fname}</span>`;
+            return `Detecting metadata`;
+        }
+        detailEl.textContent = '';
+        return msg;
+    }
+
+    function renderDetectionResults(data) {
+        const results = data.detection_results || [];
+        const recognized = results.filter(r => r.status === 'recognized').length;
+        const unclassified = results.filter(r => r.status === 'unclassified').length;
+        const errors = data.error_count !== undefined ? data.error_count : results.filter(r => r.status === 'error').length;
+        detectionSummary.textContent = '';
+        const orgPath = data.organized_dir || 'N/A';
+        const unPath = data.unclassified_dir || 'N/A';
+        organizedHint.innerHTML = `<div>Archived: <code>${orgPath}</code></div><div>Unclassified: <code>${unPath}</code></div>`;
+        pillRecognized.textContent = `Archived: ${recognized}`;
+        pillUnclassified.textContent = `Unclassified: ${unclassified}`;
+        pillErrors.textContent = `Errors: ${errors}`;
+
+        detectionTableBody.innerHTML = results.map((r, idx) => {
+            const basename = r.file ? r.file.split('/').pop() : '';
+            const broker = r.broker || '-';
+            const date = r.statement_date && r.statement_date !== 'US' ? r.statement_date : '-';
+            const account = r.account_id || '-';
+            let sourceLabel = r.source || '-';
+            if (sourceLabel === 'excel_structured') sourceLabel = 'excel';
+            const sourceClass = r.source === 'llm' ? 'tag llm-source' : 'tag excel-source';
+            const sourceTag = r.source ? `<span class="${sourceClass}">${sourceLabel}</span>` : '-';
+            return `
+                <tr>
+                    <td class="center">${idx + 1}</td>
+                    <td class="file-cell" title="${r.file || ''}">${basename || r.file || '-'}</td>
+                    <td class="center">${broker}</td>
+                    <td class="center">${date}</td>
+                    <td class="center">${account}</td>
+                    <td class="center"><span class="tag ${r.status}">${r.status === 'recognized' ? 'archived' : r.status}</span></td>
+                    <td class="center">${sourceTag}</td>
+                    <td class="error-cell" style="color:#c62828;">${r.error || ''}</td>
+                </tr>
+            `;
+        }).join('');
+        detectionResultsDiv.style.display = 'block';
     }
 
     async function loadJobHistory() {
@@ -563,16 +693,20 @@
                 return;
             }
 
-            historyDiv.innerHTML = jobs.slice(0, 10).map(job => {
-                const brokerDisplay = job.brokers ? job.brokers.join(', ') : (job.broker || 'Unknown');
-                return `
-                    <div class="job-card ${job.status}">
-                        <strong>${brokerDisplay}</strong> - ${job.date}
-                        <br>
-                        <small>Status: ${job.status} | ${new Date(job.created_at).toLocaleString()}</small>
-                    </div>
-                `;
-            }).join('');
+            historyDiv.innerHTML = `<div class="job-grid">${
+                jobs.slice(0, 12).map(job => {
+                const metaSummary = job.result && job.result.recognized_count !== undefined
+                    ? `Metadata: ${job.result.recognized_count} organized / ${job.result.unclassified_count} to review`
+                        : (job.brokers ? job.brokers.join(', ') : (job.broker || 'Unknown'));
+                    const badgeClass = job.status === 'completed' ? 'success' : (job.status === 'failed' ? 'failed' : 'processing');
+                    return `
+                        <div class="job-card">
+                            <div class="title">${metaSummary}</div>
+                            <div class="meta">Date: ${job.date || '-'}<br>Status: <span class="badge ${badgeClass}">${job.status}</span><br>${new Date(job.created_at).toLocaleString()}</div>
+                        </div>
+                    `;
+                }).join('')
+            }</div>`;
         } catch (error) {
             console.error('Failed to load job history:', error);
         }
@@ -580,5 +714,6 @@
 
     // Load job history on page load
     loadJobHistory();
+    })();
 </script>
 {% endblock %}

@@ -682,6 +682,22 @@ def cash():
         cash_by_broker = {}
 
     cash_list = cash_df.to_dict('records')
+    metadata = data.get('metadata', {}) if isinstance(data, dict) else {}
+
+    # Prepare exchange rates for display (USD base → other currency)
+    exchange_rates_usd_base = {}
+    if metadata and isinstance(metadata, dict):
+        raw_rates = metadata.get('exchange_rates', {}) or {}
+        for cur, rate in raw_rates.items():
+            if not rate or cur is None:
+                continue
+            cur_code = str(cur).upper()
+            if cur_code == 'USD':
+                continue
+            try:
+                exchange_rates_usd_base[cur_code] = round(1 / float(rate), 4)
+            except Exception:
+                continue
 
     return render_template('cash.html',
                          date=selected_date,
@@ -690,7 +706,8 @@ def cash():
                          cash_by_currency=cash_by_currency,
                          accounts_by_currency=accounts_by_currency,
                          cash_by_broker=cash_by_broker,
-                         metadata=data.get('metadata', {}))
+                         metadata=metadata,
+                         exchange_rates_usd_base=exchange_rates_usd_base)
 
 
 @app.route('/compare')

@@ -1,6 +1,23 @@
-/* FundMate Web App Styles */
+/* LedgerFlow Web App Styles */
 
 :root {
+    --primary-color: #0f766e;
+    --primary-dark: #0b4f46;
+    --secondary-color: #374151;
+    --success-color: #16a34a;
+    --danger-color: #ef4444;
+    --warning-color: #d97706;
+    --background: #f6f8f7;
+    --surface: #ffffff;
+    --border-color: #d9e0dc;
+    --text-primary: #0b1f1a;
+    --text-secondary: #4b5563;
+    --accent-soft: #d7ebe5;
+    --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+}
+
+:root.legacy-theme {
     --primary-color: #2563eb;
     --primary-dark: #1e40af;
     --secondary-color: #64748b;
@@ -12,6 +29,7 @@
     --border-color: #e2e8f0;
     --text-primary: #0f172a;
     --text-secondary: #64748b;
+    --accent-soft: #eff6ff;
     --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
 }
@@ -23,7 +41,7 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
         'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
         sans-serif;
     line-height: 1.6;
@@ -433,21 +451,28 @@ main.container {
 }
 
 .btn-primary {
-    background-color: var(--primary-color);
-    color: white;
+    background-color: var(--accent-soft);
+    color: var(--primary-color);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.06);
 }
 
 .btn-primary:hover {
-    background-color: var(--primary-dark);
+    background-color: var(--primary-color);
+    color: #fff;
+    box-shadow: 0 10px 18px rgba(0,0,0,0.12);
 }
 
 .btn-secondary {
-    background-color: var(--secondary-color);
-    color: white;
+    background-color: var(--accent-soft);
+    color: var(--primary-color);
+    border: none;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.06);
 }
 
 .btn-secondary:hover {
-    background-color: #475569;
+    background-color: var(--primary-color);
+    color: #fff;
+    box-shadow: 0 10px 18px rgba(0,0,0,0.12);
 }
 
 .button-group {

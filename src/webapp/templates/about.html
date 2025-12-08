@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}About - FundMate{% endblock %}
+{% block title %}About - LedgerFlow{% endblock %}
 
 {% block content %}
 <div class="about-container">
     <div class="about-hero">
         <div>
             <p class="eyebrow">Built for production portfolios</p>
-            <h2>FundMate</h2>
+            <h2>LedgerFlow</h2>
             <p class="lede">解析多券商 PDF/Excel → 标准化持仓与现金 → 实时定价与汇率 → 输出 Parquet/CSV 仪表盘。</p>
         </div>
         <div class="hero-actions">
@@ -53,13 +53,13 @@
 
 <style>
 :root {
-    --bg: #f5f7fb;
-    --card: #ffffff;
-    --border: #e5e7eb;
-    --text: #0f172a;
-    --muted: #6b7280;
-    --accent: #2563eb;
-    --accent-soft: #eff6ff;
+    --bg: var(--background);
+    --card: var(--surface);
+    --border: var(--border-color);
+    --text: var(--text-primary);
+    --muted: var(--text-secondary);
+    --accent: var(--primary-color);
+    --accent-soft: #e7f4f1;
 }
 
 body { background: var(--bg); }
@@ -119,24 +119,16 @@ body { background: var(--bg); }
     font-weight: 700;
     text-decoration: none;
     transition: all 0.2s ease;
-    border: 1px solid transparent;
+    background: var(--accent-soft);
+    color: var(--accent);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.06);
 }
 
-.btn.primary {
+.btn:hover {
     background: var(--accent);
     color: #fff;
-    box-shadow: 0 10px 20px rgba(37,99,235,0.15);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.12);
 }
-
-.btn.primary:hover { filter: brightness(0.95); }
-
-.btn.ghost {
-    background: var(--accent-soft);
-    color: var(--text);
-    border-color: var(--border);
-}
-
-.btn.ghost:hover { border-color: var(--accent); }
 
 .about-grid {
     display: grid;
@@ -145,7 +137,7 @@ body { background: var(--bg); }
 }
 
 .card {
-    background: #f8fafc;
+    background: #f4f7f5;
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 1rem;

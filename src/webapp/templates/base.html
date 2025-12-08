@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}FundMate{% endblock %}</title>
+    <title>{% block title %}LedgerFlow{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     {% block extra_css %}{% endblock %}
@@ -12,7 +15,7 @@
     <nav class="navbar">
         <div class="container">
             <div class="navbar-brand">
-                <h1>FundMate</h1>
+                <h1>LedgerFlow</h1>
                 <p class="tagline">Portfolio Management System</p>
             </div>
             <ul class="navbar-menu">
@@ -45,7 +48,7 @@
 
     <footer class="footer">
         <div class="container">
-            <p>&copy; 2025 FundMate - Financial Portfolio Processor</p>
+            <p>&copy; 2025 LedgerFlow - Financial Portfolio Processor</p>
             <p class="footer-note">Powered by Google Gemini AI & Futu OpenD</p>
         </div>
     </footer>
