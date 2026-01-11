@@ -13,6 +13,12 @@ echo "FundMate Web Application"
 echo "========================================="
 echo ""
 
+# Activate conda environment
+if command -v conda &> /dev/null; then
+    eval "$(conda shell.bash hook)"
+    conda activate FundMate 2>/dev/null || echo "Warning: Could not activate FundMate conda environment"
+fi
+
 # Check if Flask is installed
 if ! python -c "import flask" 2>/dev/null; then
     echo "Error: Flask is not installed"
@@ -44,6 +50,17 @@ echo ""
 echo "Press Ctrl+C to stop the server"
 echo "========================================="
 echo ""
+
+# Load local env if present (allows overriding archive dirs, etc.)
+if [ -f ".env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
+# Enable pipeline probe by default (can override by exporting PIPELINE_PROBE_ENABLE=0 before running)
+export PIPELINE_PROBE_ENABLE=${PIPELINE_PROBE_ENABLE:-1}
 
 # Start the Flask app inside the package
 PORT=$PORT PYTHONPATH=src FLASK_ENV=development python - <<'PY'

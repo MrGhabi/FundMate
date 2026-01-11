@@ -25,6 +25,7 @@
                 <li><a href="{{ url_for('compare') }}" class="{% if request.endpoint == 'compare' %}active{% endif %}">Compare</a></li>
                 <li><a href="{{ url_for('upload_page') }}" class="{% if request.endpoint == 'upload_page' %}active{% endif %}">Upload</a></li>
                 <li><a href="{{ url_for('about') }}" class="{% if request.endpoint == 'about' %}active{% endif %}">About</a></li>
+                <li><a href="{{ url_for('logout') }}" class="logout-link">Logout</a></li>
             </ul>
         </div>
     </nav>

@@ -113,6 +113,18 @@ gunicorn -c gunicorn.conf.py src.webapp.app:app
 
 The UI simply reads from `./out/result/<date>`; make sure at least one processing run (base or TC) has produced outputs before launching. All templates/static assets are packaged via `pyproject.toml` so relative paths are no longer an issue.
 
+Upload 页面布局（Upload tab）：
+- 顶部块：Run calculation date + Run Calculation 按钮，包含 pipeline 进度条和汇总表（状态/错误列），job status banner 也在此块内。
+- 中部块：Upload Broker Statements（拖拽/选择文件、上传进度条、Metadata Detection 表）。
+- 底部块：Job History，默认折叠，点击“Show Job History”后加载展示最近的运行记录（上传/计算皆有）。
+- 探针：默认启用 `PIPELINE_PROBE_ENABLE=1`（见 `run_web.sh`），可显式导出 `PIPELINE_PROBE_ENABLE=0` 关闭。
+- Job history 持久化：终态任务（completed/failed）会写入 `temp/job_history.jsonl`，`/api/jobs` 会合并内存中的进行中任务与持久化历史。
+- Job History 卡片内每条记录前有类型标记（Upload / Calculate），对应 job_type（metadata_only / pipeline_run）。
+- 点击 Job History 卡片可重放结果：Upload 会重现 Metadata Detection 表；Calculate 会重现 Pipeline 表（依赖探针数据）。
+- 若历史记录缺少 probe 数据（未启用探针的旧跑），点击时会提示无法重放该次的 pipeline summary。
+- Upload 卡片标题使用首个上传文件名（prefer 上传文件名列表；缺失则退化为首个检测文件名或“Upload”）；Calculate 卡片标题使用运行日期。
+- Pipeline 完成后会读取 parquet 汇总并回填 per-broker USD（cash/positions/total），并合并 probe 收集的文件列表以便表格展示。
+
 ## 7. Outputs
 
 `./out/result/DATE/` contains:
@@ -183,8 +195,19 @@ python -m src.metadata.organizer temp/metadata_20250807.jsonl --output data/arch
 - Naming & dedupe:
   - Canonical filename: `{BROKER}_{YYYY-MM-DD}_{ORIGINAL_NAME}.{ext}`. The trailing segment preserves the user’s original filename for traceability; organizer dedupes by `BROKER + hash + statement_date`, not by that trailing segment.
   - TC files stay under `data/archives/TC/` and should keep `TC-YYYY-MM-DD-*.xlsx` naming; do not let organizer flatten or rename them into broker roots.
-  - Hash dedupe: organizer computes SHA-256 per broker/date; identical content is skipped, hash conflicts are reported.
-  - Collision handling: when the same broker/date/account produces multiple files (e.g., GSPB Position + Cash), organizer appends `_position`, `_cash`, or `_vN` rather than overwriting.
+- Hash dedupe: organizer computes SHA-256 per broker/date; identical content is skipped, hash conflicts are reported.
+- Collision handling: when the same broker/date/account produces multiple files (e.g., GSPB Position + Cash), organizer appends `_position`, `_cash`, or `_vN` rather than overwriting.
+
+**DBS 现金 CSV（测试周期）**
+- 格式必须严格为 5 行：
+  1) `Name of the Bank:,DBS`
+  2) `Date,MM/DD/YYYY`
+  3) `USD,<number>`
+  4) `HKD,<number>`
+  5) `CNY,<number>`
+- `.env` 的 `FUNDMATE_ARCHIVE_DIR` 预计指向 `temp/archives`，组织后命名 `DBS_<date>_UNKNOWN.csv`。
+- 仅现金、无持仓；日期以 CSV 内容为准（归档文件名不参与判定）。
+- 汇率要求：HKD/CNY 缺当日汇率将直接报错，避免现金被低估。
 
 - Excel routing: filename hints (`ms|morgan|gs|goldman|tenfund|optiondaily|trade confirmation`) pick a parser, then the extractor will fall back to try all parsers before giving up, so content is still inspected when filenames are non-standard. For TC, rely on **table shape** (headers such as `Trade Date`, `BUY/SELL`, `Avg. Price`, `Amount (USD)`, `Broker`, `Currency`) rather than only the filename; filenames containing GS/MS/GSPB can otherwise be misrouted.
 - TC Excel: tagged as broker `TC` with date inferred from filename or sheet content; account may remain `UNKNOWN` unless the sheet carries it. Keep TC files in `data/archives/TC/` to avoid organizer renaming them into broker roots.
@@ -204,19 +227,29 @@ For a high-level onboarding narrative (goals, data flow, baseline philosophy), s
 
 Archive directories and filenames follow a canonical naming scheme:
 
-| Canonical Name   | Human-readable Broker | Notes                              |
-| ---------------- | --------------------- | ---------------------------------- |
-| `CICC`           | CICC                  |                                    |
-| `FIRST_SHANGHAI` | First Shanghai        | Files named `FIRST_SHANGHAI_...`   |
-| `GS`             | Goldman Sachs         |                                    |
-| `HTI`            | HTI                   |                                    |
-| `HUATAI`         | Huatai                |                                    |
-| `IB`             | Interactive Brokers   |                                    |
-| `LB`             | Longbridge            |                                    |
-| `MOOMOO`         | Moomoo                |                                    |
-| `MS`             | Morgan Stanley        |                                    |
-| `SDICS`          | SDICS                 |                                    |
-| `TFI`            | TFI                   |                                    |
-| `TIGER`          | Tiger Brokers         |                                    |
+| Canonical Name   | Human-readable Broker         | Notes                                    |
+| ---------------- | ----------------------------- | ---------------------------------------- |
+| `CICC`           | CICC                          | China International Capital Corporation  |
+| `CIS`            | China Industrial Securities   | 兴证                                      |
+| `CS`             | Credit Suisse                 | 瑞信                                      |
+| `DBS`            | DBS Bank                      | Cash-only CSV format supported           |
+| `FIRST_SHANGHAI` | First Shanghai                | Files named `FIRST_SHANGHAI_...`         |
+| `GS`             | Goldman Sachs                 | 高盛                                      |
+| `GSPB`           | Goldman Sachs Prime Brokerage | Position + Cash Excel auto-merged        |
+| `HSBC`           | HSBC                          | 汇丰                                      |
+| `HTI`            | Huatai International          | 华泰国际                                   |
+| `HUATAI`         | Huatai                        | 华泰                                      |
+| `IB`             | Interactive Brokers           | IBKR                                     |
+| `LB`             | Longbridge                    | 长桥                                      |
+| `MOOMOO`         | Moomoo / Futu                 | 富途/富牛                                  |
+| `MS`             | Morgan Stanley                | 摩根士丹利                                 |
+| `SC`             | Standard Chartered            | 渣打                                      |
+| `SDICS`          | SDICS                         |                                          |
+| `SOFI`           | SoFi                          |                                          |
+| `TENFUND`        | TenFund                       |                                          |
+| `TFI`            | Tianfeng International        | 天风国际                                   |
+| `TIGER`          | Tiger Brokers                 |                                          |
+| `UBS`            | UBS                           | 瑞银                                      |
+| `WB`             | Webull                        | 微牛                                      |
 
 File names must follow `CANONICAL_YYYY-MM-DD_ACCOUNT.ext` to ensure the archive scanner and processors detect them correctly. The `TC` folder stores trade-confirmation Excel files; if renamed, remember to adjust the `--tc-folder` argument accordingly.

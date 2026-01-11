@@ -6,6 +6,7 @@ Contains the main business logic for processing broker statements and orchestrat
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 from dataclasses import dataclass
 from loguru import logger
 import re
@@ -19,6 +20,7 @@ from src.exchange_rate_handler import exchange_handler
 from src.enums import PositionContext
 from src.position import Position
 from src.llm_handler import LLMHandler
+from src import probe
 
 
 def extract_occ_code_if_present(stock_code: str) -> str:
@@ -143,7 +145,7 @@ class BrokerStatementProcessor:
         
         # Step 11: Process Excel data from broker folder
         logger.info("Processing Excel data...")
-        excel_results = self._process_excel_data(broker_folder, date, broker)
+        excel_results = self._process_excel_data(broker_folder, date, broker, exchange_rates)
         
         # Step 12: Merge PDF and Excel results
         merged_results = self._merge_position_data(pdf_results, excel_results)
@@ -156,13 +158,29 @@ class BrokerStatementProcessor:
         # Step 14: Generate complete asset summary
         if merged_results:
             print_asset_summary(merged_results, date)
+            # temp-probe: capture broker financial summary
+            completed = set()
+            for res in merged_results:
+                cash = res.cash_data or {}
+                cash_payload = {
+                    'USD': float(cash.get('USD') or 0),
+                    'HKD': float(cash.get('HKD') or 0),
+                    'CNY': float(cash.get('CNY') or 0),
+                }
+                probe.set_broker_financials(res.broker_name, cash_payload, res.total_position_value_usd)
+                probe.mark_broker_end(res.broker_name, status="completed")
+                completed.add(res.broker_name)
+            # Mark brokers that were started but produced no result
+            for broker_name in probe.get_brokers():
+                if broker_name not in completed:
+                    probe.mark_broker_end(broker_name, status="failed", error="No result generated")
         
         logger.info("All data processing completed!")
         
         # Return results for persistence
         return merged_results, exchange_rates, date
     
-    def _process_excel_data(self, broker_folder: str, date: str, broker_filter: str = None) -> List[ProcessedResult]:
+    def _process_excel_data(self, broker_folder: str, date: str, broker_filter: str = None, exchange_rates: dict = None) -> List[ProcessedResult]:
         """
         Process Excel position data from broker folder.
         
@@ -199,16 +217,25 @@ class BrokerStatementProcessor:
                     logger.info(f"Skipping {broker_name} - not matching filter '{broker_filter}'")
                     continue
                     
+                excel_files = broker_payload.get("files") or []
+                if excel_files:
+                    probe.record_files(broker_name, excel_files, kind="excel")
+                    probe.add_file_counts(excel_count=len(excel_files))
+                    probe.mark_broker_start(broker_name)
+
                 positions = broker_payload.get("positions", [])
                 statement_date = broker_payload.get("statement_date") or date
                 account_id = broker_payload.get("account_id", "EXCEL")
                 cash_data = broker_payload.get("cash_data") or {'Total': 0.0, 'Total_type': 'USD'}
                 usd_total = 0.0
-                # Prefer explicit USD field; fallback to Total
+                # Use direct conversion (USD + HKD/CNY) when exchange_rates are available
                 if isinstance(cash_data, dict):
-                    usd_total = float(cash_data.get('USD') or 0.0)
-                    if usd_total == 0.0:
-                        usd_total = float(cash_data.get('Total') or 0.0)
+                    if exchange_rates:
+                        usd_total = self._calculate_usd_total(cash_data, exchange_rates)
+                    else:
+                        usd_total = float(cash_data.get('USD') or 0.0)
+                        if usd_total == 0.0:
+                            usd_total = float(cash_data.get('Total') or 0.0)
                 logger.info(f"Processing {len(positions)} Excel positions for {broker_name} (account {account_id})")
                 
                 # Create ProcessedResult for Excel data
@@ -231,6 +258,7 @@ class BrokerStatementProcessor:
                 
                 results.append(excel_result)
                 logger.success(f"Excel data processed for {broker_name}: {len(positions)} positions, ${excel_result.total_position_value_usd:,.2f} total value")
+                probe.mark_broker_end(broker_name, status="completed")
             
             return results
             
@@ -523,6 +551,10 @@ class BrokerStatementProcessor:
                 pdf_files.extend([(date, pdf) for pdf in discovered_files])
             
             logger.info(f"Found {len(pdf_files)} PDF files for {broker_name}")
+            probe.record_files(broker_name, [pdf for _, pdf in pdf_files], kind="pdf")
+            probe.add_file_counts(pdf_count=len(pdf_files))
+            if pdf_files:
+                probe.mark_broker_start(broker_name)
             
             # Add each PDF file as a task
             for statement_date, pdf_file in pdf_files:
@@ -611,6 +643,9 @@ class BrokerStatementProcessor:
         statement_date = task.get('statement_date') or date
         
         try:
+            probe.mark_broker_start(broker_name)
+            t0 = time.time()
+            logger.info(f"[LLM] {broker_name}: sending PDF to LLM ({pdf_file.name})")
             # Process PDF with PDFProcessor
             override_account = task.get('account_id_override')
             pdf_result = self.pdf_processor.process_pdf(
@@ -621,9 +656,11 @@ class BrokerStatementProcessor:
                 output_filename=task.get('output_filename')
             )
             
+            elapsed = time.time() - t0
             if pdf_result['status'] != 'success':
                 logger.error(f"PDF processing failed for {pdf_file.name}: {pdf_result.get('error', 'Unknown error')}")
                 return None
+            logger.info(f"[LLM] {broker_name}: LLM done in {elapsed:.1f}s ({pdf_file.name})")
             
             # Convert PDF result to ProcessedResult format
             data = self._normalize_llm_output(pdf_result['data'])
@@ -664,6 +701,7 @@ class BrokerStatementProcessor:
                 usd_total=usd_total,
                 statement_date=statement_date
             )
+            probe.mark_broker_end(broker_name, status="completed")
             
             # Position values will be calculated later in _optimize_cross_broker_pricing
             # to avoid redundant API calls and enable batch pricing optimization
@@ -688,16 +726,14 @@ class BrokerStatementProcessor:
             # Convert HKD to USD
             if hkd:
                 if 'HKD' not in exchange_rates:
-                    logger.warning("HKD exchange rate not available, skipping HKD conversion")
-                else:
-                    total += float(hkd) * exchange_rates['HKD']  # HKD→USD rate is direct multiplier
+                    raise ValueError("HKD exchange rate not available")
+                total += float(hkd) * exchange_rates['HKD']  # HKD→USD rate is direct multiplier
             
             # Convert CNY to USD
             if cny:
                 if 'CNY' not in exchange_rates:
-                    logger.warning("CNY exchange rate not available, skipping CNY conversion")
-                else:
-                    total += float(cny) * exchange_rates['CNY']  # CNY→USD rate is direct multiplier
+                    raise ValueError("CNY exchange rate not available")
+                total += float(cny) * exchange_rates['CNY']  # CNY→USD rate is direct multiplier
             
             return total
         except (ValueError, TypeError, ZeroDivisionError) as e:

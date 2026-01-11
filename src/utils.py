@@ -293,19 +293,21 @@ def print_asset_summary(results: List["ProcessedResult"], date: str = None) -> N
     summary_lines.extend(broker_list)
     summary_lines.append(f"   Total: {len(results)} accounts")
     summary_lines.append("\n" + "-" * 80)
-    
+
     total_cash_usd = 0.0
     total_positions_usd = 0.0
+    total_portfolio_value = 0.0
     
     for result in results:
         broker_name = result.broker_name
         account_id = result.account_id
-        cash_usd = result.usd_total
-        position_usd = result.total_position_value_usd
-        cash_data = result.cash_data
+        cash_usd = result.usd_total or 0.0
+        position_usd = result.total_position_value_usd or 0.0
+        cash_data = result.cash_data or {}
         
         total_cash_usd += cash_usd
         total_positions_usd += position_usd
+        total_portfolio_value += cash_usd + position_usd
         
         # Create display name
         display_name = f"{broker_name}/{account_id}" if account_id != 'DEFAULT' else broker_name
@@ -353,7 +355,7 @@ def print_asset_summary(results: List["ProcessedResult"], date: str = None) -> N
         if result.account_id == 'EXCEL':
             broker_display = result.broker_name
             
-        for position in result.positions:
+        for position in result.positions or []:
             # Support both Position objects and dicts
             if hasattr(position, 'stock_code'):
                 # Position object

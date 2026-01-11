@@ -25,11 +25,30 @@
     .upload-container {
         max-width: 1200px;
         margin: 2rem auto;
-        padding: 2rem;
+        padding: 1rem;
+    }
+
+    .section-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+    }
+
+    .section-card {
         background: var(--card);
-        border-radius: 12px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.06);
         border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.25rem 1.5rem;
+        box-shadow: 0 10px 24px rgba(0,0,0,0.05);
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
     }
 
     .upload-zone {
@@ -224,25 +243,93 @@
     .job-status.error { background: var(--danger-light); color: var(--danger); }
     .job-status.processing { background: var(--accent-light); color: var(--accent); }
 
-    .job-history { margin-top: 2rem; }
+    .job-history { margin-top: 0; }
     .job-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(260px, 320px));
         gap: 0.75rem;
+        justify-content: flex-start;
     }
     .job-card {
-        padding: 0.9rem 1rem;
+        padding: 0.75rem 0.85rem;
         background: #fff;
         border-radius: 10px;
         border: 1px solid var(--border);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+        box-shadow: 0 3px 10px rgba(0,0,0,0.04);
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
     }
-    .job-card .title { font-weight: 700; color: var(--text); }
-    .job-card .meta { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; line-height: 1.4; }
-    .badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; }
-    .badge.success { background: var(--success-light); color: var(--success); }
-    .badge.failed { background: var(--danger-light); color: var(--danger); }
-    .badge.partial, .badge.processing { background: var(--accent-light); color: var(--accent); }
+    .job-card .title { font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; font-size: 1rem; }
+    .job-card .meta { color: var(--muted); font-size: 0.9rem; line-height: 1.4; display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+    .badge { display: inline-block; padding: 0.12rem 0.45rem; border-radius: 6px; font-size: 0.82rem; font-weight: 700; }
+    .badge.success { background: var(--success-light); color: var(--success); border: 1px solid #c6f2d7; }
+    .badge.failed { background: var(--danger-light); color: var(--danger); border: 1px solid #f8c4c4; }
+    .badge.partial, .badge.processing { background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent); }
+    .job-kind { color: var(--accent); font-weight: 700; }
+
+    .run-card {
+        margin-top: 1.5rem;
+        padding: 1rem 1.25rem;
+        background: #fff;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.05);
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    .run-card label { font-weight: 700; color: var(--text); }
+    .run-card .run-date-row {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .run-card .run-date-input {
+        padding: 0.9rem 1.1rem;
+        border: 1.5px solid var(--primary-color);
+        border-radius: 0.65rem;
+        font-size: 1.05rem;
+        font-weight: 600;
+        background-color: #fff;
+        cursor: pointer;
+        min-width: 260px;
+        height: 50px;
+        color: var(--text);
+        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.12);
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .run-card .run-date-input:hover,
+    .run-card .run-date-input:focus {
+        border-color: var(--primary-dark);
+        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.16);
+        outline: none;
+    }
+    .run-card .btn-run {
+        background: var(--accent-light);
+        color: var(--accent);
+        padding: 1rem 1.7rem;
+        border: none;
+        border-radius: 0.7rem;
+        font-weight: 800;
+        font-size: 1.05rem;
+        cursor: pointer;
+        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+        transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+    }
+    .run-card .btn-run:hover {
+        transform: translateY(-1px);
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 10px 18px rgba(0, 0, 0, 0.12);
+    }
+    .run-card .btn-run:disabled {
+        background: #cbd5e1;
+        box-shadow: none;
+        cursor: not-allowed;
+        transform: none;
+    }
 
     .detection-results {
         margin-top: 1.5rem;
@@ -320,6 +407,15 @@
         color: #111827;
         font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
     }
+    /* Alignments: status/source center, error right, others left */
+    .detection-table th,
+    .detection-table td { text-align: left; }
+    .detection-table th:nth-child(6),
+    .detection-table th:nth-child(7),
+    .detection-table td:nth-child(6),
+    .detection-table td:nth-child(7) { text-align: center; }
+    .detection-table th:nth-child(8),
+    .detection-table td:nth-child(8) { text-align: right; }
 
     /* Align broker/date/account to the left for readability */
     .detection-table th:nth-child(3),
@@ -346,84 +442,210 @@
     .tag.llm-source { background: #ede9fe; color: #5b21b6; }
 
     label input[type="checkbox"] { margin-right: 0.5rem; }
+
+    .pipeline-card {
+        margin-top: 1.5rem;
+        padding: 1.25rem;
+        background: #fff;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.05);
+    }
+    .pipeline-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .pipeline-pills { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .pipeline-pill {
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        font-weight: 700;
+        font-size: 0.9rem;
+        border: 1px solid var(--border);
+        background: #f8fafc;
+    }
+    .pipeline-pill.processing { color: var(--accent); background: var(--accent-light); border-color: var(--accent); }
+    .pipeline-pill.success { color: var(--success); background: var(--success-light); border-color: #c6f2d7; }
+    .pipeline-pill.failed { color: var(--danger); background: var(--danger-light); border-color: #f8c4c4; }
+    .pipeline-stat {
+        background: #f8fafc;
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 0.35rem 0.7rem;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 0.9rem;
+    }
+    .pipeline-progress {
+        margin-top: 0.75rem;
+    }
+    .pipeline-empty {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-top: 0.75rem;
+    }
+    .pipeline-summary {
+        margin-top: 1rem;
+    }
+    .pipeline-table td.cash-cell,
+    .pipeline-table td.value-cell {
+        font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    /* Pipeline table alignment: status center, error right, others left */
+    .pipeline-table th,
+    .pipeline-table td { text-align: left; }
+    .pipeline-table th:nth-child(6),
+    .pipeline-table td:nth-child(6) { text-align: center; }
+    .pipeline-table th:nth-child(7),
+    .pipeline-table td:nth-child(7) { text-align: right; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="upload-container">
-    <h2>Upload Broker Statements</h2>
-    <p>Batch upload ZIP/RAR/PDF/Excel. Files are content-scanned (metadata) to detect broker/date/account and renamed to canonical form.</p>
-
-    <form id="uploadForm" enctype="multipart/form-data">
-        <div class="form-group">
-            <label>Files *</label>
-            <label id="dropZone" class="upload-zone" role="button" tabindex="0" aria-label="Upload files" for="fileInput">
-                <div class="upload-icon">📦</div>
-                <p><strong>Drag and drop files or ZIP archives here</strong></p>
-                <p>or click to browse</p>
-                <p class="helper-text">Accepted: PDF, XLSX, XLS, ZIP, RAR (Max 200MB)</p>
-                <p class="helper-text" style="margin-top: 0.5rem;">💡 Broker detection is content-based; filenames do not need broker hints.</p>
-            </label>
-            <input type="file" id="fileInput" name="files" multiple accept=".pdf,.xlsx,.xls,.zip,.rar" style="display: none;">
-
-            <div id="fileList" class="file-list" style="display: none;">
-                <!-- Files will be listed here -->
+    <div class="section-stack">
+        <section class="section-card" aria-labelledby="run-section-title">
+            <div class="section-header">
+                <div>
+                    <h2 id="run-section-title" style="margin:0;">Run calculation</h2>
+                    <p class="helper-text" style="margin:0;">Pick a date, run the pipeline, and monitor progress and totals.</p>
+                </div>
             </div>
 
-        </div>
-
-        <button type="submit" id="submitBtn" class="btn-submit">Process Statements</button>
-    </form>
-
-    <div id="progressContainer" class="progress-container">
-        <div class="progress-bar">
-            <div id="progressFill" class="progress-fill" style="width: 0%">0%</div>
-        </div>
-            <div class="progress-meta">
-                <span id="progressMessage" class="strong">Starting...</span>
-                <span id="progressDetail"></span>
+            <div class="run-card">
+                <div style="flex:1; min-width:260px;">
+                    <label for="runDate" style="font-size: 1.2rem;">Calculation date</label>
+                </div>
+                <div class="run-date-row">
+                    <input type="text" id="runDate" name="runDate" class="run-date-input" placeholder="Select date">
+                    <button type="button" id="runPipelineBtn" class="btn-run">Run Calculation</button>
+                </div>
             </div>
-    </div>
 
-    <div id="jobStatus" class="job-status" style="display: none;">
-        <!-- Status message will appear here -->
-    </div>
-
-    <div id="detectionResults" class="detection-results" style="display: none;">
-        <div class="detection-header">
-            <div>
-                <h3 style="margin:0;">Metadata Detection Results</h3>
-                <div id="detectionSummary" class="helper-text"></div>
+            <div id="jobStatus" class="job-status" style="display: none;">
+                <!-- Status message will appear here -->
             </div>
-            <div class="stat-pills">
-                <span class="pill green" id="pillRecognized">Recognized: 0</span>
-                <span class="pill amber" id="pillUnclassified">Unclassified: 0</span>
-                <span class="pill red" id="pillErrors">Errors: 0</span>
-            </div>
-        </div>
-        <table class="detection-table">
-            <thead>
-                <tr>
-                    <th style="width:40px;">#</th>
-                    <th>File</th>
-                    <th>Broker</th>
-                    <th>Date</th>
-                    <th>Account</th>
-                    <th>Status</th>
-                    <th>Source</th>
-                    <th>Error</th>
-                </tr>
-            </thead>
-            <tbody id="detectionTableBody"></tbody>
-        </table>
-        <p class="helper-text" id="organizedHint"></p>
-    </div>
 
-    <div class="job-history">
-        <h3>Recent Jobs</h3>
-        <div id="jobHistory">
-            <p>Loading job history...</p>
-        </div>
+            <div id="pipelineContainer" class="pipeline-card" style="display:none; margin-top: 1rem;">
+                <div class="pipeline-header">
+                    <h3 style="margin:0;">Pipeline Progress</h3>
+                    <div id="pipelineMessage" class="helper-text"></div>
+                </div>
+                <div class="pipeline-progress" id="pipelineProgressSection" style="display:none;">
+                    <div class="progress-bar">
+                        <div id="pipelineProgressFill" class="progress-fill" style="width: 0%">0%</div>
+                    </div>
+                    <div class="progress-meta">
+                        <span id="pipelineProgressMessage" class="strong"></span>
+                    </div>
+                </div>
+                <div class="pipeline-summary" id="pipelineSummarySection" style="display:none;">
+                    <table class="detection-table pipeline-table">
+                        <thead>
+                            <tr>
+                                <th style="width:40px;">#</th>
+                                <th>Broker</th>
+                                <th>Files</th>
+                        <th>Cash (USD)</th>
+                        <th>Positions Value (USD)</th>
+                                <th>Status</th>
+                                <th>Error</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pipelineTableBody"></tbody>
+                    </table>
+                </div>
+                <div class="pipeline-empty" id="pipelineEmpty">No pipeline run yet.</div>
+            </div>
+        </section>
+
+        <section class="section-card" aria-labelledby="upload-section-title">
+            <div class="section-header">
+                <div>
+                    <h2 id="upload-section-title" style="margin:0;">Upload Broker Statements</h2>
+                    <p class="helper-text" style="margin:0;">Batch upload ZIP/RAR/PDF/Excel. Files are content-scanned (metadata) to detect broker/date/account and renamed to canonical form.</p>
+                </div>
+            </div>
+
+            <form id="uploadForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label>Files *</label>
+                    <label id="dropZone" class="upload-zone" role="button" tabindex="0" aria-label="Upload files" for="fileInput">
+                        <div class="upload-icon">📦</div>
+                        <p><strong>Drag and drop files or ZIP archives here</strong></p>
+                        <p>or click to browse</p>
+                        <p class="helper-text">Accepted: PDF, XLSX, XLS, ZIP, RAR (Max 200MB)</p>
+                        <p class="helper-text" style="margin-top: 0.5rem;">💡 Broker detection is content-based; filenames do not need broker hints.</p>
+                    </label>
+                    <input type="file" id="fileInput" name="files" multiple accept=".pdf,.xlsx,.xls,.zip,.rar" style="display: none;">
+
+                    <div id="fileList" class="file-list" style="display: none;">
+                        <!-- Files will be listed here -->
+                    </div>
+
+                </div>
+
+                <button type="submit" id="submitBtn" class="btn-submit">Process Statements</button>
+            </form>
+
+            <div id="progressContainer" class="progress-container">
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill" style="width: 0%">0%</div>
+                </div>
+                    <div class="progress-meta">
+                        <span id="progressMessage" class="strong">Starting...</span>
+                        <span id="progressDetail"></span>
+                    </div>
+            </div>
+
+            <div id="detectionResults" class="detection-results" style="display: none;">
+                <div class="detection-header">
+                    <div>
+                        <h3 style="margin:0;">Metadata Detection Results</h3>
+                        <div id="detectionSummary" class="helper-text"></div>
+                    </div>
+                    <div class="stat-pills">
+                        <span class="pill green" id="pillRecognized">Recognized: 0</span>
+                        <span class="pill amber" id="pillUnclassified">Unclassified: 0</span>
+                        <span class="pill red" id="pillErrors">Errors: 0</span>
+                    </div>
+                </div>
+                <table class="detection-table">
+                    <thead>
+                        <tr>
+                            <th style="width:40px;">#</th>
+                            <th>File</th>
+                            <th>Broker</th>
+                            <th>Date</th>
+                            <th>Account</th>
+                            <th>Status</th>
+                            <th>Source</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detectionTableBody"></tbody>
+                </table>
+                <p class="helper-text" id="organizedHint"></p>
+            </div>
+        </section>
+
+        <section class="section-card" aria-labelledby="history-section-title">
+            <div class="section-header">
+                <div>
+                    <h3 id="history-section-title" style="margin:0;">Job History</h3>
+                    <p class="helper-text" style="margin:0;">Latest runs (upload & calculation).</p>
+                </div>
+                <button type="button" id="jobHistoryToggle" class="btn-secondary" aria-expanded="false" aria-controls="jobHistorySection">Show Job History</button>
+            </div>
+            <div id="jobHistorySection" class="job-history" style="display:none;">
+                <div id="jobHistory">
+                    <p>Loading job history...</p>
+                </div>
+            </div>
+        </section>
     </div>
 </div>
 {% endblock %}
@@ -447,8 +669,36 @@
     const pillRecognized = document.getElementById('pillRecognized');
     const pillUnclassified = document.getElementById('pillUnclassified');
     const pillErrors = document.getElementById('pillErrors');
+    const runDateInput = document.getElementById('runDate');
+    const runPipelineBtn = document.getElementById('runPipelineBtn');
+    const ACTIVE_JOB_KEY = 'fundmate_active_upload_job';
+    const LAST_RESULT_KEY = 'fundmate_last_upload_result';
+    const ACTIVE_PIPELINE_KEY = 'fundmate_active_pipeline_job';
+    const LAST_PIPELINE_RESULT_KEY = 'fundmate_last_pipeline_result';
+    const pipelineContainer = document.getElementById('pipelineContainer');
+    const pipelineMessage = document.getElementById('pipelineMessage');
+    const pipelineProgressSection = document.getElementById('pipelineProgressSection');
+    const pipelineProgressFill = document.getElementById('pipelineProgressFill');
+    const pipelineProgressMessage = document.getElementById('pipelineProgressMessage');
+    const pipelineSummarySection = document.getElementById('pipelineSummarySection');
+    const pipelineTableBody = document.getElementById('pipelineTableBody');
+    const pipelineEmpty = document.getElementById('pipelineEmpty');
+    const pipelineFileStat = document.getElementById('pipelineFileStat');
+    const pipelineTcStat = document.getElementById('pipelineTcStat');
+    const pipelineTimeStat = document.getElementById('pipelineTimeStat');
+    let pipelineLastPct = 0;
+
+    function hidePipelineContainerIfIdle() {
+        if (pipelineContainer) pipelineContainer.style.display = 'none';
+    }
 
     let selectedFiles = [];
+
+    // Default date to today
+    if (runDateInput) {
+        runDateInput.value = new Date().toISOString().slice(0, 10);
+        setupRunDatePicker(runDateInput);
+    }
 
     // Drag and drop handlers
     dropZone.addEventListener('dragover', (e) => {
@@ -543,12 +793,15 @@
 
             if (response.ok) {
                 if (data.job_id && data.status === 'processing') {
+                    persistActiveJob(data.job_id, false);
                     startPolling(data.job_id);
                 } else if (data.status === 'completed') {
                     updateProgress(100, 'Detection complete', false);
                     showStatus('success', data.message || 'Completed');
                     renderDetectionResults(data);
                     loadJobHistory();
+                    persistLastResult(data.job_id, data);
+                    clearActiveJob();
                     resetForm();
                 }
             } else {
@@ -561,7 +814,86 @@
         }
     });
 
-    function startPolling(jobId) {
+    // Run pipeline button
+    runPipelineBtn.addEventListener('click', async () => {
+        const date = runDateInput.value;
+        if (!date) {
+            alert('请选择日期');
+            return;
+        }
+        runPipelineBtn.disabled = true;
+        showPipelineContainer();
+        setPipelineStatus('processing', '');
+        pipelineProgressSection.style.display = 'block';
+        pipelineSummarySection.style.display = 'none';
+        pipelineEmpty.style.display = 'none';
+        pipelineProgressFill.classList.remove('indeterminate');
+        pipelineProgressFill.style.width = '0%';
+        pipelineProgressFill.textContent = '0%';
+        pipelineProgressMessage.textContent = 'Processing...';
+        pipelineLastPct = 0;
+        try {
+            const res = await fetch('/api/run_date', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date, use_tc: true })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to start');
+            if (data.job_id) {
+                startPipelinePolling(data.job_id);
+            } else {
+                showStatus('success', data.message || 'Started');
+            }
+        } catch (err) {
+            showStatus('error', err.message);
+        } finally {
+            runPipelineBtn.disabled = false;
+        }
+    });
+
+    function startPipelinePolling(jobId) {
+        persistActivePipeline(jobId);
+        showPipelineContainer();
+        let pollCount = 0;
+        const maxPolls = 300;
+        const timer = setInterval(async () => {
+            pollCount += 1;
+            try {
+                const res = await fetch(`/api/jobs/${jobId}`);
+                if (!res.ok) throw new Error('Job not found');
+                const job = await res.json();
+                renderPipelineProgress(job);
+
+                if (job.status === 'completed') {
+                    clearInterval(timer);
+                    const hasResult = job.result && (job.result.brokers || job.result.pipeline_results);
+                    if (hasResult) {
+                        renderPipelineResults(job.result);
+                        persistLastPipelineResult(jobId, job.result);
+                    } else {
+                        setPipelineStatus('failed', 'No pipeline result returned');
+                    }
+                    clearActivePipeline();
+                    runPipelineBtn.disabled = false;
+                } else if (job.status === 'failed') {
+                    clearInterval(timer);
+                    setPipelineStatus('failed', job.message || 'Failed');
+                    clearActivePipeline();
+                    runPipelineBtn.disabled = false;
+                }
+            } catch (err) {
+                if (pollCount >= maxPolls) {
+                    clearInterval(timer);
+                    setPipelineStatus('failed', 'Polling timeout');
+                    clearActivePipeline();
+                    runPipelineBtn.disabled = false;
+                }
+            }
+        }, 1000);
+    }
+
+    function startPolling(jobId, isPipeline=false) {
         let pollCount = 0;
         const maxPolls = 300; // ~5 minutes at 1s
         const timer = setInterval(async () => {
@@ -576,21 +908,28 @@
                 if (job.status === 'completed') {
                     clearInterval(timer);
                     showStatus('success', job.message || 'Completed');
-                    if (job.result) {
+                    if (job.result && !isPipeline && job.job_type !== 'pipeline_run') {
                         renderDetectionResults(job.result);
+                        persistLastResult(jobId, job.result);
                     }
                     loadJobHistory();
+                    clearActiveJob();
                     resetForm();
+                    runPipelineBtn.disabled = false;
                 } else if (job.status === 'failed') {
                     clearInterval(timer);
                     showStatus('error', job.message || 'Failed');
+                    clearActiveJob();
                     resetForm();
+                    runPipelineBtn.disabled = false;
                 }
             } catch (err) {
                 if (pollCount >= maxPolls) {
                     clearInterval(timer);
                     showStatus('error', 'Polling timeout');
+                    clearActiveJob();
                     resetForm();
+                    runPipelineBtn.disabled = false;
                 }
             }
         }, 1000);
@@ -625,10 +964,10 @@
         displayFileList();
     }
 
-    function formatProgressMessage(msg) {
-        const detailEl = document.getElementById('progressDetail');
+    function formatProgressMessage(msg, detailEl) {
+        const detailElResolved = detailEl || document.getElementById('progressDetail');
         if (!msg) {
-            detailEl.textContent = '';
+            if (detailElResolved) detailElResolved.textContent = '';
             return msg;
         }
         const detectMatch = msg.match(/Detecting metadata\s+(\d+)\/(\d+):\s*(.+)/i);
@@ -636,11 +975,221 @@
             const step = detectMatch[1];
             const total = detectMatch[2];
             const fname = detectMatch[3];
-            detailEl.innerHTML = `<span class="strong">Step ${step} of ${total}</span> · <span>${fname}</span>`;
+            if (detailElResolved) detailElResolved.innerHTML = `<span class="strong">Step ${step} of ${total}</span> · <span>${fname}</span>`;
             return `Detecting metadata`;
         }
-        detailEl.textContent = '';
+        if (detailElResolved) detailElResolved.textContent = '';
         return msg;
+    }
+
+    function persistActiveJob(jobId, isPipeline) {
+        try {
+            const payload = { jobId, isPipeline: !!isPipeline, ts: Date.now() };
+            localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify(payload));
+        } catch (e) {
+            console.warn('Unable to persist job state', e);
+        }
+    }
+
+    function persistActivePipeline(jobId) {
+        try {
+            const payload = { jobId, ts: Date.now() };
+            localStorage.setItem(ACTIVE_PIPELINE_KEY, JSON.stringify(payload));
+        } catch (e) { /* ignore */ }
+    }
+
+    function clearActivePipeline() {
+        try { localStorage.removeItem(ACTIVE_PIPELINE_KEY); } catch (e) { /* ignore */ }
+    }
+
+    function persistLastPipelineResult(jobId, result) {
+        if (!result) return;
+        try {
+            const payload = { jobId, result, ts: Date.now() };
+            localStorage.setItem(LAST_PIPELINE_RESULT_KEY, JSON.stringify(payload));
+        } catch (e) { /* ignore */ }
+    }
+
+    function setupRunDatePicker(input) {
+        if (typeof flatpickr === 'undefined' || !input) return;
+        flatpickr(input, {
+            dateFormat: 'Y-m-d',
+            defaultDate: input.value || new Date(),
+            minDate: '2025-01-01',
+            allowInput: true,
+            disableMobile: true,
+            position: 'below',
+            onChange: (selectedDates, dateStr) => {
+                input.value = dateStr;
+            }
+        });
+    }
+
+    function clearActiveJob() {
+        try { localStorage.removeItem(ACTIVE_JOB_KEY); } catch (e) { /* ignore */ }
+    }
+
+    function persistLastResult(jobId, result) {
+        if (!result) return;
+        try {
+            const payload = { jobId, result, ts: Date.now() };
+            localStorage.setItem(LAST_RESULT_KEY, JSON.stringify(payload));
+        } catch (e) {
+            console.warn('Unable to persist last result', e);
+        }
+    }
+
+    function clearLastResult() {
+        try { localStorage.removeItem(LAST_RESULT_KEY); } catch (e) { /* ignore */ }
+    }
+
+    async function restoreActiveJob() {
+        let stored;
+        try {
+            stored = localStorage.getItem(ACTIVE_JOB_KEY);
+        } catch (e) {
+            console.warn('Unable to read job state', e);
+            return;
+        }
+        if (!stored) return;
+        let parsed;
+        try {
+            parsed = JSON.parse(stored);
+        } catch (e) {
+            clearActiveJob();
+            return;
+        }
+        const jobId = parsed && parsed.jobId;
+        const isPipeline = !!(parsed && parsed.isPipeline);
+        if (!jobId) {
+            clearActiveJob();
+            return;
+        }
+        if (isPipeline) {
+            clearActiveJob();
+            startPipelinePolling(jobId);
+            return;
+        }
+        try {
+            const res = await fetch(`/api/jobs/${jobId}`);
+            if (!res.ok) throw new Error('Job not found');
+            const job = await res.json();
+            if (job.status === 'processing') {
+                progressContainer.style.display = 'block';
+                submitBtn.disabled = true;
+                dropZone.classList.add('disabled');
+                updateProgress(job.progress || 10, job.message || 'Processing...', false);
+                startPolling(jobId, isPipeline);
+            } else if (job.status === 'completed') {
+                updateProgress(100, job.message || 'Completed', false);
+                showStatus('success', job.message || 'Completed');
+                if (job.result) {
+                    if (!isPipeline && job.job_type !== 'pipeline_run') {
+                        renderDetectionResults(job.result);
+                        persistLastResult(jobId, job.result);
+                    } else if (isPipeline || job.job_type === 'pipeline_run') {
+                        renderPipelineResults(job.result);
+                        persistLastPipelineResult(jobId, job.result);
+                    }
+                }
+                clearActiveJob();
+                clearActivePipeline();
+                resetForm();
+            } else if (job.status === 'failed') {
+                showStatus('error', job.message || 'Failed');
+                clearActiveJob();
+                clearActivePipeline();
+                resetForm();
+            }
+        } catch (e) {
+            clearActiveJob();
+            clearActivePipeline();
+        }
+    }
+
+    async function restoreActivePipeline() {
+        let stored;
+        try { stored = localStorage.getItem(ACTIVE_PIPELINE_KEY); } catch (e) { return; }
+        if (!stored) return;
+        let parsed;
+        try { parsed = JSON.parse(stored); } catch (e) { clearActivePipeline(); return; }
+        const jobId = parsed && parsed.jobId;
+        if (!jobId) { clearActivePipeline(); return; }
+        showPipelineContainer();
+        try {
+            const res = await fetch(`/api/jobs/${jobId}`);
+            if (!res.ok) throw new Error('Job not found');
+            const job = await res.json();
+            renderPipelineProgress(job);
+            if (job.status === 'processing') {
+                startPipelinePolling(jobId);
+            } else if (job.status === 'completed') {
+                if (job.result && (job.result.brokers || job.result.pipeline_results)) {
+                    renderPipelineResults(job.result);
+                    persistLastPipelineResult(jobId, job.result);
+                } else {
+                    setPipelineStatus('failed', 'No pipeline result returned');
+                }
+                clearActivePipeline();
+            } else if (job.status === 'failed') {
+                setPipelineStatus('failed', job.message || 'Failed');
+                clearActivePipeline();
+            }
+        } catch (e) {
+            clearActivePipeline();
+        }
+    }
+
+    function restoreLastPipelineResult() {
+        let stored;
+        try { stored = localStorage.getItem(LAST_PIPELINE_RESULT_KEY); } catch (e) { return; }
+        if (!stored) return;
+        let parsed;
+        try { parsed = JSON.parse(stored); } catch (e) { return; }
+        if (!parsed || !parsed.result) return;
+        showPipelineContainer();
+        renderPipelineResults(parsed.result);
+    }
+
+    function normalizePipelineResult(data) {
+        if (!data) return null;
+        if (data.brokers) return data;
+        if (Array.isArray(data.pipeline_results)) {
+            const brokers = {};
+            data.pipeline_results.forEach(item => {
+                if (!item || !item.broker) return;
+                brokers[item.broker] = {
+                    files: item.files || {},
+                    cash: item.cash,
+                    positions_value_usd: item.positions_value_usd,
+                    status: item.status,
+                    error: item.error,
+                };
+            });
+            return { brokers };
+        }
+        return data;
+    }
+
+    function rehydrateJob(job) {
+        if (!job) return;
+        if (job.job_type === 'pipeline_run' && job.result) {
+            const normalized = normalizePipelineResult(job.result);
+            showPipelineContainer();
+            if (normalized && (normalized.brokers || normalized.pipeline_results)) {
+                renderPipelineResults(normalized);
+            } else {
+                setPipelineStatus('failed', 'No pipeline summary stored for this run (probe was likely disabled).');
+            }
+            const pc = document.getElementById('pipelineContainer');
+            if (pc) window.scrollTo({ top: pc.offsetTop - 16, behavior: 'smooth' });
+            return;
+        }
+        if (job.job_type === 'metadata_only' && job.result && job.result.detection_results) {
+            renderDetectionResults(job.result);
+            const dr = document.getElementById('detectionResults');
+            if (dr) window.scrollTo({ top: dr.offsetTop - 16, behavior: 'smooth' });
+        }
     }
 
     function renderDetectionResults(data) {
@@ -667,11 +1216,11 @@
             const sourceTag = r.source ? `<span class="${sourceClass}">${sourceLabel}</span>` : '-';
             return `
                 <tr>
-                    <td class="center">${idx + 1}</td>
+                    <td>${idx + 1}</td>
                     <td class="file-cell" title="${r.file || ''}">${basename || r.file || '-'}</td>
-                    <td class="center">${broker}</td>
-                    <td class="center">${date}</td>
-                    <td class="center">${account}</td>
+                    <td>${broker}</td>
+                    <td>${date}</td>
+                    <td>${account}</td>
                     <td class="center"><span class="tag ${r.status}">${r.status === 'recognized' ? 'archived' : r.status}</span></td>
                     <td class="center">${sourceTag}</td>
                     <td class="error-cell" style="color:#c62828;">${r.error || ''}</td>
@@ -681,39 +1230,273 @@
         detectionResultsDiv.style.display = 'block';
     }
 
+    function renderPipelineProgress(job, indeterminate=false) {
+        showPipelineContainer();
+        pipelineProgressSection.style.display = 'block';
+        pipelineSummarySection.style.display = 'none';
+        pipelineEmpty.style.display = 'none';
+        const rawPct = Math.min(100, Math.max(0, job.progress || 0));
+        const pct = job.status === 'processing' ? Math.max(rawPct, pipelineLastPct || 0) : rawPct;
+        pipelineLastPct = pct;
+        pipelineProgressFill.classList.remove('indeterminate');
+        pipelineProgressFill.style.width = `${pct}%`;
+        pipelineProgressFill.textContent = `${pct}%`;
+        pipelineProgressMessage.textContent = job.message || 'Processing...';
+        setPipelineStatus(job.status === 'failed' ? 'failed' : 'processing', '');
+    }
+
+    // mock pipeline progress removed (now uses backend probe data)
+
+    function renderPipelineResults(data) {
+        showPipelineContainer();
+        pipelineProgressSection.style.display = 'none';
+        pipelineSummarySection.style.display = 'block';
+        pipelineEmpty.style.display = 'none';
+
+        if (!data || !data.brokers) {
+            setPipelineStatus('failed', 'No pipeline results available');
+            return;
+        }
+
+        const brokerEntries = Object.entries(data.brokers || {});
+        const results = brokerEntries.map(([broker, payload]) => {
+            const files = [];
+            if (payload.files && payload.files.pdf) files.push(...payload.files.pdf);
+            if (payload.files && payload.files.excel) files.push(...payload.files.excel);
+            return {
+                broker,
+                files,
+                cash: payload.cash,
+                positions_value_usd: payload.positions_value_usd,
+                status: payload.status,
+                error: payload.error,
+            };
+        }).sort((a, b) => a.broker.localeCompare(b.broker));
+
+        const totals = results.reduce((acc, r) => {
+            const cash = r.cash || {};
+            acc.cash.USD += Number(cash.USD || 0);
+            acc.cash.HKD += Number(cash.HKD || 0);
+            acc.cash.CNY += Number(cash.CNY || 0);
+            acc.positions_value_usd += Number(r.positions_value_usd || 0);
+            return acc;
+        }, { cash: { USD: 0, HKD: 0, CNY: 0 }, positions_value_usd: 0 });
+
+        const statusMsg = data.global && data.global.status === 'failed'
+            ? (data.global.error || 'Pipeline failed')
+            : '';
+        setPipelineStatus(data.global && data.global.status === 'failed' ? 'failed' : 'completed', statusMsg);
+        updatePipelineStats(data, results);
+
+        pipelineTableBody.innerHTML = results.map((r, idx) => {
+            let filesLabel = '-';
+            if (Array.isArray(r.files)) {
+                filesLabel = r.files.length ? r.files.join(', ') : '-';
+            } else if (r.files && typeof r.files === 'object') {
+                const pdf = Array.isArray(r.files.pdf) ? r.files.pdf : [];
+                const excel = Array.isArray(r.files.excel) ? r.files.excel : [];
+                const combined = [...pdf, ...excel];
+                filesLabel = combined.length ? combined.join(', ') : '-';
+            } else if (r.files) {
+                filesLabel = r.files;
+            }
+            const baseTrim = (val) => {
+                if (!val) return val;
+                const prefix = '/data/ghabi/FundMate/';
+                return val.startsWith(prefix) ? val.slice(prefix.length) : val;
+            };
+            filesLabel = filesLabel
+                .split(', ')
+                .map(baseTrim)
+                .join(', ');
+            const cashStr = formatCash(r.cash);
+            const statusClass = r.status === 'completed' ? 'recognized' : (r.status === 'processing' ? 'unclassified' : 'error');
+            const statusLabel = r.status === 'completed' ? 'completed' : (r.status || '-');
+            return `
+                <tr>
+                    <td>${idx + 1}</td>
+                    <td>${r.broker || '-'}</td>
+                    <td class="file-cell" title="${filesLabel}">${filesLabel || '-'}</td>
+                    <td class="cash-cell">${cashStr ? cashStr : '-'}</td>
+                    <td class="value-cell">$${formatNumberSafe(r.positions_value_usd)}</td>
+                    <td class="center"><span class="tag ${statusClass}">${statusLabel}</span></td>
+                    <td class="error-cell" style="color:#c62828;">${r.error || ''}</td>
+                </tr>
+            `;
+        }).join('') + `
+            <tr>
+                <td>-</td>
+                <td><strong>TOTAL</strong></td>
+                <td>-</td>
+                <td class="cash-cell"><strong>${formatCash(totals.cash)}</strong></td>
+                <td class="value-cell"><strong>$${formatNumberSafe(totals.positions_value_usd)}</strong></td>
+                <td class="center">-</td>
+                <td></td>
+            </tr>
+        `;
+    }
+
+    function setPipelineStatus(status, message) {
+        if (!pipelineContainer) return;
+        pipelineContainer.style.display = 'block';
+        pipelineMessage.textContent = message || '';
+    }
+
+    function updatePipelineStats(data, results) {
+        const globalCounts = data && data.global && data.global.file_counts;
+        let excelCount = 0, pdfCount = 0;
+        if (globalCounts) {
+            pdfCount = Number(globalCounts.pdf || 0);
+            excelCount = Number(globalCounts.excel || 0);
+        } else if (results) {
+            const flatFiles = [];
+            results.forEach(r => {
+                if (Array.isArray(r.files)) {
+                    flatFiles.push(...r.files);
+                } else if (r.files) {
+                    flatFiles.push(r.files);
+                }
+            });
+            excelCount = flatFiles.filter(f => f.toLowerCase().endsWith('.xlsx') || f.toLowerCase().endsWith('.xls')).length;
+            pdfCount = flatFiles.filter(f => f.toLowerCase().endsWith('.pdf')).length;
+        }
+
+        if (pipelineFileStat) {
+            pipelineFileStat.style.display = 'none';
+            pipelineFileStat.textContent = '';
+        }
+        if (pipelineTcStat) {
+            pipelineTcStat.style.display = 'none';
+            pipelineTcStat.textContent = '';
+        }
+        if (pipelineTimeStat) {
+            pipelineTimeStat.style.display = 'none';
+            pipelineTimeStat.textContent = '';
+        }
+    }
+
+    function showPipelineContainer() {
+        if (pipelineContainer) pipelineContainer.style.display = 'block';
+        if (pipelineEmpty) pipelineEmpty.style.display = 'none';
+    }
+
+    function formatCash(cashObj) {
+        if (!cashObj) return '-';
+        const parts = [];
+        const addPart = (label, value) => {
+            const num = Number(value);
+            if (isNaN(num)) return;
+            if (Math.abs(num) < 1e-6) return;
+            parts.push(`${label}${formatNumberSafe(num)}`);
+        };
+        addPart('$', cashObj.USD);
+        addPart('HK$', cashObj.HKD);
+        addPart('¥', cashObj.CNY);
+        return parts.length ? parts.join(' / ') : '-';
+    }
+
+    function formatNumberSafe(value) {
+        if (value === undefined || value === null || isNaN(value)) return '-';
+        return Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // mockPipelineResult removed; backend data required
+
     async function loadJobHistory() {
+        const historyDiv = document.getElementById('jobHistory');
+        if (!historyDiv) return;
+        historyDiv.innerHTML = '<p>Loading...</p>';
+
         try {
             const response = await fetch('/api/jobs');
             const jobs = await response.json();
-
-            const historyDiv = document.getElementById('jobHistory');
 
             if (jobs.length === 0) {
                 historyDiv.innerHTML = '<p>No jobs yet</p>';
                 return;
             }
 
+            const formatUploadTitle = (job) => {
+                const uploaded = job.result && Array.isArray(job.result.uploaded_files) ? job.result.uploaded_files : [];
+                if (uploaded.length) return uploaded[0];
+                const dr = job.result && Array.isArray(job.result.detection_results) ? job.result.detection_results : [];
+                if (!dr.length) return 'Upload';
+                const filePath = dr[0].file || '';
+                const parts = filePath.split('/');
+                const rawIdx = parts.indexOf('raw');
+                if (rawIdx !== -1 && parts.length > rawIdx + 1) {
+                    return parts[rawIdx + 1] || 'Upload';
+                }
+                const base = parts.pop() || filePath;
+                return base || 'Upload';
+            };
+
             historyDiv.innerHTML = `<div class="job-grid">${
-                jobs.slice(0, 12).map(job => {
-                const metaSummary = job.result && job.result.recognized_count !== undefined
-                    ? `Metadata: ${job.result.recognized_count} organized / ${job.result.unclassified_count} to review`
-                        : (job.brokers ? job.brokers.join(', ') : (job.broker || 'Unknown'));
+                jobs.slice(0, 12).map((job, idx) => {
                     const badgeClass = job.status === 'completed' ? 'success' : (job.status === 'failed' ? 'failed' : 'processing');
+                    const kindLabel = job.job_type === 'pipeline_run' ? 'Calculate' : (job.job_type === 'metadata_only' ? 'Upload' : (job.job_type || 'Job'));
+                    const titleText = job.job_type === 'pipeline_run'
+                        ? (job.date || '-')
+                        : formatUploadTitle(job);
                     return `
-                        <div class="job-card">
-                            <div class="title">${metaSummary}</div>
-                            <div class="meta">Date: ${job.date || '-'}<br>Status: <span class="badge ${badgeClass}">${job.status}</span><br>${new Date(job.created_at).toLocaleString()}</div>
+                        <div class="job-card" data-job-index="${idx}">
+                            <div class="title"><span class="job-kind">${kindLabel}</span> ${titleText}</div>
+                            <div class="meta">
+                                <span class="badge ${badgeClass}">${job.status}</span>
+                                <span>${new Date(job.created_at).toLocaleString()}</span>
+                            </div>
                         </div>
                     `;
                 }).join('')
             }</div>`;
+            // Attach click to rehydrate results
+            const cards = historyDiv.querySelectorAll('.job-card');
+            cards.forEach(card => {
+                const j = jobs[Number(card.dataset.jobIndex)];
+                card.addEventListener('click', () => rehydrateJob(j));
+            });
         } catch (error) {
             console.error('Failed to load job history:', error);
         }
     }
 
-    // Load job history on page load
-    loadJobHistory();
+    // Load job history on demand after user expands section
+    const jobHistoryWrapper = document.getElementById('jobHistory');
+    const jobHistoryToggle = document.getElementById('jobHistoryToggle');
+    const jobHistorySection = document.getElementById('jobHistorySection');
+
+    function collapseJobHistory() {
+        if (jobHistorySection) jobHistorySection.style.display = 'none';
+        if (jobHistoryToggle) {
+            jobHistoryToggle.textContent = 'Show Job History';
+            jobHistoryToggle.setAttribute('aria-expanded', 'false');
+        }
+    }
+
+    async function expandJobHistory() {
+        if (jobHistorySection) jobHistorySection.style.display = 'block';
+        if (jobHistoryToggle) {
+            jobHistoryToggle.textContent = 'Hide Job History';
+            jobHistoryToggle.setAttribute('aria-expanded', 'true');
+        }
+        await loadJobHistory();
+    }
+
+    if (jobHistoryToggle) {
+        jobHistoryToggle.addEventListener('click', () => {
+            const isOpen = jobHistoryToggle.getAttribute('aria-expanded') === 'true';
+            if (isOpen) {
+                collapseJobHistory();
+            } else {
+                expandJobHistory();
+            }
+        });
+    }
+
+    collapseJobHistory();
+    restoreActiveJob();
+    restoreActivePipeline();
+    hidePipelineContainerIfIdle();
     })();
 </script>
 {% endblock %}

@@ -54,6 +54,7 @@ class TradeConfirmationProcessor:
         self.price_fetcher = PriceFetcher()
         self.persistence = DataPersistence()
         self.price_failures = []  # Track failed price fetches
+        self.tc_price_map: Dict[str, Tuple[float, str]] = {}  # symbol -> (price, currency)
         self._hk_code_cache: Dict[str, str] = {}
         self._option_parser_configured = False
     
@@ -253,6 +254,8 @@ class TradeConfirmationProcessor:
         """
         # Ensure option parser can resolve HK numeric codes before processing
         self._setup_option_parser()
+        # Reset TC price cache for this run
+        self.tc_price_map = {}
         
         logger.info("=" * 80)
         logger.info("PHASE 1: Processing Base Portfolio")
@@ -316,6 +319,14 @@ class TradeConfirmationProcessor:
             tc_folder, start_date_for_tc, target_date
         )
         logger.info(f"Parsed {len(transactions)} transactions from TC files")
+
+        # Cache TC transaction prices per symbol (first occurrence wins)
+        for txn in transactions:
+            norm_code = self.standardize_option_format(
+                self._normalize_equity_code(txn.stock_code)
+            )
+            if norm_code and norm_code not in self.tc_price_map and txn.avg_price is not None:
+                self.tc_price_map[norm_code] = (txn.avg_price, txn.currency or 'USD')
         
         # Fail if no transactions found
         if len(transactions) == 0:
@@ -445,8 +456,8 @@ class TradeConfirmationProcessor:
             logger.warning(f"TC folder does not exist: {tc_folder}")
             return []
         
-        # Find all TC files
-        tc_files = sorted(folder.glob("TC-*.xlsx"))
+        # Find all TC files (support both TC-YYYY-MM-DD-*.xlsx and TC_YYYY-MM-DD_*.xlsx)
+        tc_files = sorted(set(folder.glob("TC-*.xlsx")).union(folder.glob("TC_*.xlsx")))
         
         if not tc_files:
             raise FileNotFoundError(
@@ -519,7 +530,7 @@ class TradeConfirmationProcessor:
         Returns:
             Date string in YYYY-MM-DD format
         """
-        match = re.match(r'TC-(\d{4}-\d{2}-\d{2})-', filename)
+        match = re.match(r'TC[-_](\d{4}-\d{2}-\d{2})[-_]', filename)
         if match:
             return match.group(1)
         raise ValueError(f"Invalid TC filename format: {filename}")
@@ -581,7 +592,27 @@ class TradeConfirmationProcessor:
                 trade_date = pd.to_datetime(row['Trade Date']).strftime('%Y-%m-%d')
                 
                 # Normalize direction: remove spaces (e.g., "BUY COVER" -> "BUYCOVER")
-                direction = str(row['BUY/SELL']).strip().upper().replace(' ', '')
+                raw_direction = str(row['BUY/SELL']).strip().upper().replace(' ', '')
+                direction = raw_direction
+                is_sell_short = direction == 'SELLSHORT'
+                if is_sell_short:
+                    direction = 'SELL'
+                elif direction == 'SELL':
+                    direction = 'SELL'
+                elif direction == 'BUY':
+                    direction = 'BUY'
+                elif direction == 'BUYCOVER':
+                    direction = 'BUYCOVER'
+                else:
+                    raise ValueError(
+                        f"Unsupported transaction direction: {direction}\n"
+                        f"File: {file_path.name}\n"
+                        f"Broker: {row['Broker']}\n"
+                        f"Stock Code: {row['Stock Code']}\n"
+                        f"Quantity: {row['Quantity']}\n"
+                        f"Supported directions: BUY, BUYCOVER, SELL, SELLSHORT\n"
+                        f"Please check the 'BUY/SELL' column in the TC file."
+                    )
                 
                 # Clean stock code: remove Bloomberg suffixes
                 stock_code = str(row['Stock Code']).strip()
@@ -608,12 +639,16 @@ class TradeConfirmationProcessor:
                 
                 # Normalize Amount to absolute value for consistent processing
                 # TC files may have signed (US) or unsigned (Asia) amounts
+                quantity = int(row['Quantity'])
+                if is_sell_short:
+                    quantity = -abs(quantity)
+
                 transaction = Transaction(
                     date=trade_date,
                     broker=str(row['Broker']).strip(),
                     stock_code=stock_code,
                     direction=direction,
-                    quantity=int(row['Quantity']),
+                    quantity=quantity,
                     avg_price=float(row['Avg. Price']),
                     amount_usd=abs(float(row['Amount (USD)'])),
                     currency=str(row['Currency']).strip(),
@@ -867,7 +902,8 @@ class TradeConfirmationProcessor:
             
             current_holding = self._normalize_holding(position.holding)
             new_holding = current_holding - txn.quantity
-            if new_holding < 0:
+            # Allow increasing an existing short even if TC marks it as SELL (e.g., SELL SHORT)
+            if new_holding < 0 and current_holding >= 0:
                 raise ValueError(
                     f"SELL quantity exceeds current holding!\n"
                     f"Broker: {result.broker_name}\n"
@@ -1005,6 +1041,12 @@ class TradeConfirmationProcessor:
         # Fetch prices for each symbol (same logic as broker_processor)
         successful = 0
         for symbol in unique_symbols:
+            normalized_symbol = self.standardize_option_format(
+                self._normalize_equity_code(symbol)
+            )
+            tc_price = self.tc_price_map.get(normalized_symbol)
+            broker_price = None
+            broker_currency = None
             try:
                 # Get first position to extract raw_description
                 first_result, first_idx = unique_symbols[symbol][0]
@@ -1012,25 +1054,42 @@ class TradeConfirmationProcessor:
                 raw_description = first_position.raw_description or ''
                 
                 # get_stock_price now returns (price, currency) tuple
+                broker_price = first_position.final_price or first_position.broker_price
+                broker_currency = (
+                    first_position.optimized_price_currency
+                    or first_position.price_currency
+                    or getattr(first_position, 'broker_price_currency', None)
+                )
+
                 price, api_currency = get_stock_price(symbol, target_date, None, raw_description)
-                
+
                 if price is not None and price > 0.0 and api_currency:
                     # Use API-provided currency (determined by API type: US vs HK)
                     price_currency = api_currency
                     price_source = 'Futu'
-                    
-                    # Update all positions with this symbol
-                    for result, pos_idx in unique_symbols[symbol]:
-                        position = result.positions[pos_idx]
-                        position.final_price = price
-                        position.final_price_source = price_source
-                        position.optimized_price_currency = price_currency
-                    
-                    successful += 1
+                elif tc_price:
+                    price, price_currency = tc_price
+                    price_source = 'TC transaction price'
+                    logger.info(f"Using TC price for {symbol}: {price} {price_currency}")
+                elif broker_price is not None:
+                    price = broker_price
+                    price_currency = broker_currency or api_currency
+                    price_source = 'Broker price'
+                    logger.info(f"Using broker price for {symbol}: {price} {price_currency}")
                 else:
                     logger.warning(f"No valid price returned for {symbol}")
                     self.price_failures.append(symbol)
-                    
+                    continue
+
+                # Update all positions with this symbol
+                for result, pos_idx in unique_symbols[symbol]:
+                    position = result.positions[pos_idx]
+                    position.final_price = price
+                    position.final_price_source = price_source
+                    position.optimized_price_currency = price_currency
+
+                successful += 1
+
             except Exception as e:
                 logger.error(
                     f"Exception while fetching price for {symbol}: {type(e).__name__}: {e}"

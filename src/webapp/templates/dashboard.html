@@ -84,9 +84,17 @@
     <div class="section">
         <h3 class="section-title">Cash Holdings by Currency</h3>
         <div class="currency-grid">
-            {% set total_cash = summary.cash_by_currency.values() | sum %}
+            {# Calculate USD equivalent for bar chart proportions #}
+            {% set rates = data.metadata.exchange_rates or {} %}
+            {% set ns = namespace(total_usd=0) %}
             {% for currency, amount in summary.cash_by_currency.items() %}
-            {% set pct = (amount / total_cash * 100) if total_cash else 0 %}
+                {% set rate = rates.get(currency, 1.0) if currency != 'USD' else 1.0 %}
+                {% set ns.total_usd = ns.total_usd + amount * rate %}
+            {% endfor %}
+            {% for currency, amount in summary.cash_by_currency.items() %}
+            {% set rate = rates.get(currency, 1.0) if currency != 'USD' else 1.0 %}
+            {% set usd_value = amount * rate %}
+            {% set pct = (usd_value / ns.total_usd * 100) if ns.total_usd else 0 %}
             <div class="currency-card">
                 <div class="currency-meta">
                     <span class="currency-name">{{ currency }}</span>

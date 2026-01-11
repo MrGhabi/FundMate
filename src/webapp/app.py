@@ -3,12 +3,12 @@ FundMate Web Application
 A Flask-based web interface for viewing and analyzing financial portfolio data
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, flash
 import pandas as pd
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import json
 import threading
 import uuid
@@ -17,6 +17,12 @@ import zipfile
 import re
 import math
 import shutil
+import hashlib
+from functools import wraps
+
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 try:
     import rarfile
@@ -26,11 +32,14 @@ except ImportError:  # pragma: no cover
 from src.config import settings
 from src.metadata.detector import StatementMetadataDetector, iter_files
 from src.metadata.organizer import MetadataRecord, organize_files
+from src import probe
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 TEMPLATE_DIR = PACKAGE_ROOT / 'templates'
 STATIC_DIR = PACKAGE_ROOT / 'static'
-ARCHIVE_DIR = Path('./data/archives')
+ARCHIVE_DIR = Path(os.getenv('FUNDMATE_ARCHIVE_DIR', './data/archives')).resolve()
+TC_DIR = Path(os.getenv('FUNDMATE_TC_DIR', str(ARCHIVE_DIR / 'TC'))).resolve()
+JOB_HISTORY_FILE = Path('./temp/job_history.jsonl')
 
 app = Flask(
     __name__,
@@ -39,11 +48,45 @@ app = Flask(
 )
 
 # Configuration
-app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['SECRET_KEY'] = os.environ.get('FM_SECRET_KEY', os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production'))
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB max file size for ZIP files
 app.config['UPLOAD_FOLDER'] = Path('./temp/uploads')  # Keep all validation in temp
 app.config['ALLOWED_EXTENSIONS'] = {'pdf', 'xlsx', 'xls', 'zip', 'rar'}
 METADATA_LLM_ENABLED = os.getenv('ENABLE_METADATA_LLM', 'true').lower() == 'true'
+
+# Authentication configuration
+AUTH_USERNAME = os.environ.get('FM_USERNAME', 'admin')
+AUTH_PASSWORD = os.environ.get('FM_PASSWORD')
+if not AUTH_PASSWORD:
+    raise RuntimeError("FM_PASSWORD environment variable is required for authentication")
+
+# Flask-Login setup
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'Please log in to access this page.'
+
+# Flask-Limiter setup (rate limiting for login attempts)
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[],  # No default limits
+    storage_uri="memory://",
+)
+
+
+class User(UserMixin):
+    """Simple single-user model for authentication."""
+    def __init__(self, user_id: str):
+        self.id = user_id
+
+
+@login_manager.user_loader
+def load_user(user_id: str) -> Optional[User]:
+    """Load user by ID. Only our single configured user is valid."""
+    if user_id == AUTH_USERNAME:
+        return User(user_id)
+    return None
 
 # Create upload directory (temp-only for validation)
 app.config['UPLOAD_FOLDER'].mkdir(parents=True, exist_ok=True)
@@ -51,27 +94,31 @@ app.config['UPLOAD_FOLDER'].mkdir(parents=True, exist_ok=True)
 # Processing job tracking
 processing_jobs = {}
 processing_lock = threading.Lock()
+history_lock = threading.Lock()
 
 # Broker name patterns for automatic detection
+# NOTE: Keys must match CANONICAL_BROKER_KEYWORDS in src/metadata/detector.py
 BROKER_PATTERNS = {
-    'IB': [r'ib[_\-\s]', r'interactive', r'ibkr'],
-    'FUTU': [r'futu', r'富途'],
-    'MOOMOO': [r'moomoo', r'moo[_\-\s]', r'富牛'],
     'CICC': [r'cicc'],
-    'First Shanghai': [r'first[\s_\-]*shanghai', r'fssec'],
+    'CIS': [r'\bcis\b', r'china[\s_\-]*industrial', r'兴证'],
+    'CS': [r'credit[_\-\s]suisse', r'^cs[_\-\s]', r'瑞信'],
+    'DBS': [r'\bdbs\b'],
+    'FIRST_SHANGHAI': [r'first[\s_\-]*shanghai', r'fssec'],
+    'GS': [r'goldman[_\-\s]sachs', r'^gs[_\-\s]', r'高盛'],
+    'GSPB': [r'gspb', r'goldman[\s_\-]*sachs[\s_\-]*pb', r'gs[\s_\-]*pb'],
+    'HSBC': [r'hsbc', r'汇丰'],
     'HTI': [r'\bhti\b', r'huatai[\s_\-]*international'],
     'HUATAI': [r'huatai', r'htsc'],
+    'IB': [r'ib[_\-\s]', r'interactive', r'ibkr'],
+    'LB': [r'longbridge', r'^lb[_\-\s]', r'长桥'],
+    'MOOMOO': [r'moomoo', r'futu', r'富途', r'富牛'],
+    'MS': [r'morgan[_\-\s]stanley', r'^ms[_\-\s]', r'摩根士丹利'],
+    'SC': [r'standard[_\-\s]chartered', r'^sc[_\-\s]', r'渣打'],
     'SDICS': [r'\bsdics\b'],
+    'SOFI': [r'sofi'],
+    'TENFUND': [r'ten[\s_\-]*fund', r'tenfund'],
     'TFI': [r'\btfi\b', r'tianfeng'],
     'TIGER': [r'tiger'],
-    'TenFund': [r'ten[\s_\-]*fund', r'tenfund'],
-    'MS': [r'morgan[_\-\s]stanley', r'^ms[_\-\s]', r'摩根士丹利'],
-    'GS': [r'goldman[_\-\s]sachs', r'^gs[_\-\s]', r'高盛'],
-    'SC': [r'standard[_\-\s]chartered', r'^sc[_\-\s]', r'渣打'],
-    'HSBC': [r'hsbc', r'汇丰'],
-    'CS': [r'credit[_\-\s]suisse', r'^cs[_\-\s]', r'瑞信'],
-    'LB': [r'longbridge', r'^lb[_\-\s]', r'长桥'],
-    'SOFI': [r'sofi'],
     'UBS': [r'ubs', r'瑞银'],
     'WB': [r'webull', r'^wb[_\-\s]', r'微牛'],
 }
@@ -150,6 +197,49 @@ def extract_archive(archive_path: Path, extract_to: Path) -> list[Path]:
         return extracted_files
 
     raise ValueError(f"Unsupported archive type: {archive_path.suffix}")
+
+
+def _copy_into_archive(src_dir: Path, archive_dir: Path) -> None:
+    """Copy organized files into archive_dir with simple dedupe by sha256."""
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    def sha256(path: Path) -> str:
+        h = hashlib.sha256()
+        with path.open('rb') as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    for file in src_dir.rglob('*'):
+        if not file.is_file():
+            continue
+        try:
+            rel_path = file.relative_to(src_dir)
+        except ValueError:
+            rel_path = Path(file.name)
+
+        if rel_path.parts and rel_path.parts[0].lower() == "tc":
+            # Force TC into TC/ subfolder; ensures TC stays isolated even if organized output is flat
+            target = archive_dir / Path("TC") / Path(*rel_path.parts[1:]) if len(rel_path.parts) > 1 else archive_dir / "TC" / rel_path
+        else:
+            target = archive_dir / rel_path
+        if target.exists():
+            try:
+                if sha256(target) == sha256(file):
+                    continue  # identical, skip
+            except Exception:
+                pass
+            # collision with different content: append variant
+            stem, suf = target.stem, target.suffix
+            n = 1
+            while True:
+                candidate = target.with_name(f"{stem}_upload{n}{suf}")
+                if not candidate.exists():
+                    target = candidate
+                    break
+                n += 1
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(file, target)
 
 
 def detect_broker_from_filename(filename: str) -> Optional[str]:
@@ -266,6 +356,102 @@ def update_job_status(job_id: str, status: str, message: str = None,
                 processing_jobs[job_id]['error'] = error
             if result:
                 processing_jobs[job_id]['result'] = result
+            processing_jobs[job_id].pop('persisted', None)
+            should_persist = status in {'completed', 'failed'}
+            job_snapshot = processing_jobs[job_id].copy() if should_persist else None
+
+    if status in {'completed', 'failed'} and job_snapshot:
+        _persist_job_history(job_id, job_snapshot)
+
+
+def _compact_result(result: dict) -> dict:
+    """Keep only small, meaningful fields for history."""
+    if not isinstance(result, dict):
+        return {}
+    keys = [
+        'recognized_count',
+        'unclassified_count',
+        'error_count',
+        'organized_dir',
+        'unclassified_dir',
+        'date',
+        'output_dir',
+        'uploaded_files',
+        'final_totals',
+    ]
+    compact = {k: v for k, v in result.items() if k in keys and v is not None}
+    # Include detection results for upload jobs
+    if result.get('detection_results'):
+        compact['detection_results'] = result.get('detection_results')
+    # Include brokers snapshot for pipeline runs (trim to key fields)
+    brokers = result.get('brokers')
+    if isinstance(brokers, dict):
+        compact['brokers'] = {}
+        for name, payload in brokers.items():
+            if not isinstance(payload, dict):
+                continue
+            compact['brokers'][name] = {
+                'files': payload.get('files'),
+                'cash': payload.get('cash'),
+                'positions_value_usd': payload.get('positions_value_usd'),
+                'status': payload.get('status'),
+                'error': payload.get('error'),
+                'total_usd': payload.get('total_usd'),
+            }
+    elif brokers:
+        compact['brokers'] = brokers
+    if result.get('pipeline_results'):
+        compact['pipeline_results'] = result.get('pipeline_results')
+    return compact
+
+
+def _persist_job_history(job_id: str, job: dict):
+    """Append a compact job snapshot to history file (idempotent per job run)."""
+    if not job or job.get('persisted'):
+        return
+    entry = {
+        'job_id': job_id,
+        'job_type': job.get('job_type') or 'unknown',
+        'date': job.get('date'),
+        'status': job.get('status'),
+        'created_at': job.get('created_at'),
+        'message': job.get('message'),
+        'broker': job.get('broker'),
+        'brokers': job.get('brokers'),
+    }
+    compact_result = _compact_result(job.get('result') or {})
+    if compact_result:
+        entry['result'] = compact_result
+
+    try:
+        JOB_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with history_lock:
+            with JOB_HISTORY_FILE.open('a', encoding='utf-8') as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+        with processing_lock:
+            if job_id in processing_jobs:
+                processing_jobs[job_id]['persisted'] = True
+    except Exception:  # pragma: no cover - best effort
+        pass
+
+
+def _load_job_history(limit: int = 200) -> List[dict]:
+    """Load last N job history entries from disk."""
+    if not JOB_HISTORY_FILE.exists():
+        return []
+    try:
+        with history_lock:
+            lines = JOB_HISTORY_FILE.read_text(encoding='utf-8').splitlines()
+    except Exception:  # pragma: no cover
+        return []
+    entries = []
+    for line in lines[-limit:]:
+        try:
+            entries.append(json.loads(line))
+        except Exception:
+            continue
+    entries.sort(key=lambda x: x.get('created_at') or '', reverse=True)
+    return entries
 
 
 def process_multiple_brokers(job_id: str, broker_files: Dict[str, List[Path]], date: str, upload_base_dir: str):
@@ -440,6 +626,33 @@ def load_portfolio_data(date: str) -> Dict:
 
 def run_date_pipeline(job_id: str, date: str, use_tc: bool = True):
     """Run main pipeline for a given date in background (optionally with TC)"""
+    probe_path = Path('./temp/pipeline_jobs') / date / f"job_{job_id}.json"
+    probe_start = datetime.now()
+    success = False
+    error_msg = None
+    def _on_probe_update(progress: int, message: Optional[str]):
+        with processing_lock:
+            if job_id in processing_jobs:
+                processing_jobs[job_id]['progress'] = progress
+                if message:
+                    processing_jobs[job_id]['message'] = message
+                # attach incremental probe snapshot for frontend stats
+                try:
+                    processing_jobs[job_id]['result'] = probe.get_data()
+                except Exception:
+                    pass
+    try:
+        probe.start(
+            date=date,
+            use_tc=use_tc,
+            archive_dir=str(ARCHIVE_DIR),
+            tc_dir=str(TC_DIR) if use_tc else None,
+            output_path=probe_path,
+            job_id=job_id,
+            on_update=_on_probe_update,
+        )
+    except Exception:
+        logger.warning("[temp-probe] failed to start probe", exc_info=True)
     try:
         from src.main import main as process_main
         import sys
@@ -447,7 +660,7 @@ def run_date_pipeline(job_id: str, date: str, use_tc: bool = True):
         update_job_status(
             job_id,
             'processing',
-            f"Starting pipeline for {date} ({'with TC' if use_tc else 'base only'})",
+            None,  # keep status/progress, avoid duplicate banner text in UI
             10
         )
 
@@ -459,7 +672,7 @@ def run_date_pipeline(job_id: str, date: str, use_tc: bool = True):
                 '--date', date,
             ]
             if use_tc:
-                argv.append('--use-tc')
+                argv.extend(['--use-tc', '--tc-folder', str(TC_DIR)])
             sys.argv = argv
 
             process_main()
@@ -475,23 +688,31 @@ def run_date_pipeline(job_id: str, date: str, use_tc: bool = True):
 
         result_dir = Path(settings.result_dir) / date
         if result_dir.exists():
+            final_result = build_final_pipeline_result(date, result_dir)
             update_job_status(
                 job_id,
                 'completed',
                 f"Success: generated output for {date}",
                 100,
-                result={'date': date, 'output_dir': str(result_dir)}
+                result={
+                    'date': date,
+                    'output_dir': str(result_dir),
+                    **(final_result or {})
+                }
             )
+            success = True
         else:
+            error_msg = 'Missing output directory'
             update_job_status(
                 job_id,
                 'failed',
                 f"Pipeline finished but no output found for {date}",
                 100,
-                error='Missing output directory'
+                error=error_msg
             )
     except Exception as e:
         import traceback
+        error_msg = str(e)
         update_job_status(
             job_id,
             'failed',
@@ -499,9 +720,70 @@ def run_date_pipeline(job_id: str, date: str, use_tc: bool = True):
             100,
             error=traceback.format_exc()
         )
+    finally:
+        elapsed_ms = int((datetime.now() - probe_start).total_seconds() * 1000)
+        try:
+            if success:
+                probe_data = probe.get_data()
+                with processing_lock:
+                    if job_id in processing_jobs:
+                        # If final result was attached, merge files from probe (if any)
+                        current_result = processing_jobs[job_id].get('result') or {}
+                        if probe_data and 'brokers' in probe_data:
+                            brokers = current_result.setdefault('brokers', {})
+                            for bname, payload in probe_data['brokers'].items():
+                                if not isinstance(payload, dict):
+                                    continue
+                                files = payload.get('files') or {}
+                                broker_entry = brokers.setdefault(bname, {'files': {'pdf': [], 'excel': []}})
+                                if isinstance(files, dict):
+                                    for kind in ('pdf', 'excel'):
+                                        src_list = files.get(kind) or []
+                                        if not isinstance(src_list, list):
+                                            continue
+                                        dst_list = broker_entry.setdefault('files', {}).setdefault(kind, [])
+                                        for f in src_list:
+                                            if f not in dst_list:
+                                                dst_list.append(f)
+                        processing_jobs[job_id]['result'] = current_result or probe_data
+            probe.finalize(success=success, error=error_msg, elapsed_ms=elapsed_ms)
+        except Exception:
+            logger.warning("[pipeline-probe] finalize failed", exc_info=True)
+
+
+@app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("5 per minute", methods=["POST"], error_message="Too many login attempts. Please try again later.")
+def login():
+    """Login page and handler."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+
+        if username == AUTH_USERNAME and password == AUTH_PASSWORD:
+            user = User(username)
+            login_user(user)
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('index'))
+        else:
+            error = 'Invalid username or password'
+
+    return render_template('login.html', error=error)
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    """Logout and redirect to login page."""
+    logout_user()
+    return redirect(url_for('login'))
 
 
 @app.route('/')
+@login_required
 def index():
     """Dashboard - main overview page"""
     available_dates = get_available_dates()
@@ -526,6 +808,7 @@ def index():
 
 
 @app.route('/positions')
+@login_required
 def positions():
     """Detailed positions view"""
     available_dates = get_available_dates()
@@ -561,7 +844,7 @@ def positions():
         positions_df['value_num'] = 0
 
     def _sig_round(value: float, sig: int = 3) -> float:
-        if value is None:
+        if value is None or pd.isna(value):
             return None
         if value == 0:
             return 0.0
@@ -606,7 +889,7 @@ def positions():
                 'date': row.get('date')
             })
             # Prefer Futu price; otherwise first available price
-            if child_price is not None:
+            if child_price is not None and not pd.isna(child_price):
                 if best_source is None:
                     best_price = _sig_round(float(child_price), 3)
                     best_price_currency = child_currency
@@ -643,6 +926,7 @@ def positions():
 
 
 @app.route('/cash')
+@login_required
 def cash():
     """Cash holdings view"""
     available_dates = get_available_dates()
@@ -752,6 +1036,7 @@ def cash():
 
 
 @app.route('/compare')
+@login_required
 def compare():
     """Historical comparison view"""
     available_dates = get_available_dates()
@@ -780,18 +1065,21 @@ def compare():
 
 
 @app.route('/about')
+@login_required
 def about():
     """About page"""
     return render_template('about.html', hide_date_selector=True)
 
 
 @app.route('/upload')
+@login_required
 def upload_page():
     """File upload page"""
     return render_template('upload.html')
 
 
 @app.route('/upload', methods=['POST'])
+@login_required
 def upload_files():
     """Handle file uploads: save → safe extract → metadata detect → organize (temp-only).
 
@@ -923,6 +1211,10 @@ def upload_files():
             if recognized_records:
                 organize_files(recognized_records, organized_dir, dry_run=False)
 
+            # Copy organized files into configured archive dir (default temp/archives)
+            if organized_dir.exists():
+                _copy_into_archive(organized_dir, ARCHIVE_DIR)
+
             # Move unclassified files into a dedicated folder for user review
             for path in unclassified_files:
                 target = _safe_target_path(unclassified_dir, path.name)
@@ -943,6 +1235,7 @@ def upload_files():
                 'detection_results': detection_results,
                 'llm_error': llm_error,
                 'error_count': error_count,
+                'uploaded_files': [p.name for p in (saved_archives + saved_regular)],
             }
 
             with processing_lock:
@@ -953,6 +1246,7 @@ def upload_files():
                     'result': result_payload,
                     'error': None,
                 })
+            _persist_job_history(job_id, processing_jobs[job_id])
 
         except Exception as e:
             with processing_lock:
@@ -962,6 +1256,7 @@ def upload_files():
                     'message': f'Failed: {e}',
                     'progress': 100,
                 })
+            _persist_job_history(job_id, processing_jobs[job_id])
 
     # Save uploads synchronously before background job (avoid closed file handles)
     try:
@@ -1006,6 +1301,7 @@ def upload_files():
 
 
 @app.route('/api/jobs/<job_id>')
+@login_required
 def get_job_status(job_id):
     """Get processing job status"""
     with processing_lock:
@@ -1018,11 +1314,15 @@ def get_job_status(job_id):
 
 
 @app.route('/api/jobs')
+@login_required
 def list_jobs():
     """List all processing jobs"""
+    persisted_jobs = _load_job_history()
+    combined = {j.get('job_id'): j for j in persisted_jobs if j.get('job_id')}
+
     with processing_lock:
-        jobs_list = [
-            {
+        for job_id, job in processing_jobs.items():
+            combined[job_id] = {
                 'job_id': job_id,
                 'broker': job.get('broker'),  # For old single-broker jobs
                 'brokers': job.get('brokers'),  # For new multi-broker jobs
@@ -1030,18 +1330,60 @@ def list_jobs():
                 'status': job.get('status'),
                 'created_at': job.get('created_at'),
                 'result': job.get('result'),
-                'message': job.get('message')
+                'message': job.get('message'),
+                'job_type': job.get('job_type')
             }
-            for job_id, job in processing_jobs.items()
-        ]
 
     # Sort by created_at descending
-    jobs_list.sort(key=lambda x: x['created_at'], reverse=True)
+    jobs_list = [j for j in combined.values() if j]
+    jobs_list.sort(key=lambda x: x.get('created_at') or '', reverse=True)
 
     return jsonify(jobs_list)
 
 
+@app.route('/api/run_date', methods=['POST'])
+@login_required
+def api_run_date():
+    """Trigger pipeline run for a given date using configured archive/TC dirs."""
+    payload = request.get_json(force=True, silent=True) or {}
+    date = (payload.get('date') or '').strip()
+    use_tc = payload.get('use_tc', True)
+
+    if not date:
+        return jsonify({'error': 'date is required (YYYY-MM-DD)'}), 400
+
+    job_id = str(uuid.uuid4())
+    thread = threading.Thread(target=run_date_pipeline, args=(job_id, date, use_tc), daemon=True)
+
+    with processing_lock:
+        processing_jobs[job_id] = {
+            'status': 'processing',
+            'date': date,
+            'created_at': datetime.now().isoformat(),
+            'message': 'Queued pipeline run',
+            'result': None,
+            'error': None,
+            'job_type': 'pipeline_run',
+            'brokers': None,
+        }
+
+    thread.start()
+
+    return jsonify({
+        'job_id': job_id,
+        'status': 'processing',
+        'message': f'Started pipeline for {date}',
+        'archive_dir': str(ARCHIVE_DIR),
+        'tc_dir': str(TC_DIR) if use_tc else None,
+    })
+
+
+# Backward-compatible alias for legacy clients using dash-separated path
+app.add_url_rule('/api/run-date', view_func=api_run_date, methods=['POST'], endpoint='api_run_date_dash')
+
+
 @app.route('/api/date-status')
+@login_required
 def api_date_status():
     """Check if data exists for a date"""
     date = request.args.get('date')
@@ -1052,39 +1394,8 @@ def api_date_status():
     return jsonify({'date': date, 'exists': exists})
 
 
-@app.route('/api/run-date', methods=['POST'])
-def api_run_date():
-    """Trigger pipeline for a date (with TC by default)"""
-    date = request.args.get('date') or request.form.get('date')
-    use_tc = (request.args.get('use_tc', 'true').lower() == 'true') or (request.form.get('use_tc', 'true').lower() == 'true')
-    if not date:
-        return jsonify({'error': 'date required'}), 400
-    try:
-        datetime.strptime(date, '%Y-%m-%d')
-    except ValueError:
-        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
-
-    job_id = str(uuid.uuid4())
-    with processing_lock:
-        processing_jobs[job_id] = {
-            'status': 'pending',
-            'date': date,
-            'created_at': datetime.now().isoformat(),
-            'message': 'Queued',
-            'result': None,
-            'error': None,
-            'job_type': 'run_date',
-            'use_tc': use_tc
-        }
-
-    thread = threading.Thread(target=run_date_pipeline, args=(job_id, date, use_tc))
-    thread.daemon = True
-    thread.start()
-
-    return jsonify({'job_id': job_id, 'date': date, 'use_tc': use_tc, 'status': 'processing'})
-
-
 @app.route('/api/summary/<date>')
+@login_required
 def api_summary(date):
     """API endpoint for summary data"""
     data = load_portfolio_data(date)
@@ -1247,6 +1558,47 @@ def calculate_summary(data: Dict) -> Dict:
         )
 
     return summary
+
+
+def build_final_pipeline_result(date: str, result_dir: Path) -> Optional[Dict[str, Any]]:
+    """
+    Build a final per-broker summary from persisted parquet outputs.
+    Returns brokers map compatible with frontend pipeline table.
+    """
+    cash_path = result_dir / f"cash_summary_{date}.parquet"
+    pos_path = result_dir / f"positions_{date}.parquet"
+    if not cash_path.exists() or not pos_path.exists():
+        return None
+    try:
+        cash_df = pd.read_parquet(cash_path)
+        pos_df = pd.read_parquet(pos_path)
+    except Exception:
+        return None
+
+    cash_totals = cash_df.groupby('broker_name')['usd_total'].sum().to_dict()
+    pos_totals = pos_df.groupby('broker_name')['position_value_usd'].sum().to_dict()
+
+    brokers = {}
+    for broker in set(list(cash_totals.keys()) + list(pos_totals.keys())):
+        cash_usd = float(cash_totals.get(broker, 0) or 0)
+        pos_usd = float(pos_totals.get(broker, 0) or 0)
+        total_usd = cash_usd + pos_usd
+        brokers[broker] = {
+            'cash': {'USD': cash_usd},
+            'positions_value_usd': pos_usd,
+            'total_usd': total_usd,
+            'status': 'completed',
+            'files': {'pdf': [], 'excel': []},
+            'error': '',
+        }
+
+    totals = {
+        'cash_usd': sum(cash_totals.values()),
+        'positions_usd': sum(pos_totals.values()),
+    }
+    totals['grand_total_usd'] = totals['cash_usd'] + totals['positions_usd']
+
+    return {'brokers': brokers, 'final_totals': totals}
 
 
 def calculate_comparison(data1: Dict, data2: Dict, date1: str, date2: str) -> Dict:

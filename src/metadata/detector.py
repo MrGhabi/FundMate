@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Iterable
+
+from datetime import datetime
 
 from loguru import logger
 
@@ -26,19 +29,27 @@ from src.pdf_processor import BROKER_CONFIG
 
 CANONICAL_BROKER_KEYWORDS: Dict[str, List[str]] = {
     "CICC": ["CICC", "CHINA INTERNATIONAL CAPITAL"],
-    "FIRST_SHANGHAI": ["FIRST SHANGHAI"],
-    "GS": ["GOLDMAN", "GOLDMAN SACHS"],
     "CIS": ["CIS", "CHINA INDUSTRIAL SECURITIES", "兴证"],
-    "HTI": ["HAITONG"],
-    "HUATAI": ["HUATAI"],
-    "IB": ["INTERACTIVEBROKERS", "INTERACTIVE BROKERS", "IBKR"],
-    "LB": ["LONGBRIDGE"],
-    "MOOMOO": ["MOOMOO", "FUTU"],
-    "MS": ["MORGAN STANLEY"],
-    "SDICS": ["SDICS"],
-    "TFI": ["TFI"],
-    "TIGER": ["TIGER"],
+    "CS": ["CREDIT SUISSE", "瑞信"],
+    "DBS": ["DBS"],
+    "FIRST_SHANGHAI": ["FIRST SHANGHAI", "FSSEC"],
+    "GS": ["GOLDMAN", "GOLDMAN SACHS", "高盛"],
     "GSPB": ["GSPB", "GOLDMAN SACHS PB", "GS PB"],
+    "HSBC": ["HSBC", "汇丰"],
+    "HTI": ["HAITONG", "HUATAI INTERNATIONAL"],
+    "HUATAI": ["HUATAI", "HTSC"],
+    "IB": ["INTERACTIVEBROKERS", "INTERACTIVE BROKERS", "IBKR"],
+    "LB": ["LONGBRIDGE", "长桥"],
+    "MOOMOO": ["MOOMOO", "FUTU", "富途", "富牛"],
+    "MS": ["MORGAN STANLEY", "摩根士丹利"],
+    "SC": ["STANDARD CHARTERED", "渣打"],
+    "SDICS": ["SDICS"],
+    "SOFI": ["SOFI"],
+    "TENFUND": ["TENFUND", "TEN FUND"],
+    "TFI": ["TFI", "TIANFENG"],
+    "TIGER": ["TIGER"],
+    "UBS": ["UBS", "瑞银"],
+    "WB": ["WEBULL", "微牛"],
 }
 
 BROKER_MAPPING_PROMPT = "\n".join(
@@ -140,8 +151,81 @@ class StatementMetadataDetector:
             return self.detect_pdf(path)
         if suffix in {".xls", ".xlsx"}:
             return self.detect_excel(path)
+        if suffix == ".csv":
+            return self._detect_csv_metadata(path)
         logger.warning(f"Unsupported file type: {path}")
         return None
+
+    def _detect_csv_metadata(self, path: Path) -> Optional[StatementMetadata]:
+        """CSV metadata detector (currently DBS cash-only format).
+
+        Strict table-shape guard: expects rows
+        1) Name of the Bank:,DBS
+        2) Date,<mm/dd/yyyy>
+        3) USD,<number>
+        4) HKD,<number>
+        5) CNY,<number>
+        """
+
+        try:
+            with path.open(newline="") as f:
+                rows = list(csv.reader(f))
+        except Exception as exc:
+            raise RuntimeError(f"Failed to read CSV {path}: {exc}")
+
+        if len(rows) < 3:
+            return None
+
+        def _strip_row(row: List[str]) -> List[str]:
+            return [c.strip() for c in row]
+
+        row0 = _strip_row(rows[0]) if rows else []
+        row1 = _strip_row(rows[1]) if len(rows) > 1 else []
+
+        if not (len(row0) >= 2 and row0[0].lower() == "name of the bank:" and row0[1].upper() == "DBS"):
+            return None
+
+        if len(row1) < 2 or not row1[1]:
+            raise ValueError("DBS CSV: missing Date value")
+
+        try:
+            stmt_date = datetime.strptime(row1[1], "%m/%d/%Y").strftime("%Y-%m-%d")
+        except Exception:
+            raise ValueError(f"DBS CSV: unsupported Date format '{row1[1]}' (expect MM/DD/YYYY)")
+
+        # Basic currency presence check to avoid misrouting random CSVs
+        currencies = {"USD": None, "HKD": None, "CNY": None}
+        for row in rows[2:]:
+            cells = _strip_row(row)
+            if len(cells) < 2:
+                continue
+            code = cells[0].upper()
+            if code in currencies:
+                currencies[code] = cells[1]
+
+        if currencies["USD"] is None:
+            raise ValueError("DBS CSV: missing USD row")
+
+        def _to_float(val: Optional[str]) -> float:
+            if val is None or val == "":
+                return 0.0
+            try:
+                return float(str(val).replace(",", ""))
+            except Exception:
+                raise ValueError(f"DBS CSV: invalid numeric value '{val}'")
+
+        usd = _to_float(currencies["USD"])
+        hkd = _to_float(currencies["HKD"])
+        cny = _to_float(currencies["CNY"])
+
+        return StatementMetadata(
+            file=str(path),
+            broker_name="DBS",
+            account_id=None,
+            statement_date=stmt_date,
+            source="csv_header",
+            extra={"usd": usd, "hkd": hkd, "cny": cny},
+        )
 
     def _prepare_pdf_for_detection(self, path: Path) -> Path:
         """Decrypt PDF into a temporary file when password is known.

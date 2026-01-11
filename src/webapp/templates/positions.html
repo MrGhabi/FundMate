@@ -76,8 +76,10 @@
                     </td>
                     <td>
                         {% if agg.price_source %}
+                        {% set source_label = agg.price_source %}
+                        {% if source_label == 'TC transaction price' %}{% set source_label = 'TC' %}{% elif source_label == 'Broker price' %}{% set source_label = 'Broker' %}{% endif %}
                         {% set source_class = 'badge-source-' + agg.price_source|lower %}
-                        <span class="badge {{ source_class }}">{{ agg.price_source }}</span>
+                        <span class="badge {{ source_class }}">{{ source_label }}</span>
                         {% else %}—{% endif %}
                     </td>
                     <td class="text-right">{{ agg.broker_count }}</td>
@@ -108,8 +110,14 @@
                                     </td>
                                     <td>
                                         {% if child.final_price_source %}
+                                        {% set label = child.final_price_source %}
+                                        {% if label == 'TC transaction price' %}
+                                            {% set label = 'TC' %}
+                                        {% elif label == 'Broker price' %}
+                                            {% set label = 'Broker' %}
+                                        {% endif %}
                                         {% set child_class = 'badge-source-' + child.final_price_source|lower %}
-                                        <span class="badge {{ child_class }}">{{ child.final_price_source }}</span>
+                                        <span class="badge {{ child_class }}">{{ label }}</span>
                                         {% else %}—{% endif %}
                                     </td>
                                     <td class="text-right">

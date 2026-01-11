@@ -204,8 +204,12 @@ class ExcelMetadataExtractor:
         stmt_date = None
         account = None
 
+        name_lower = path.name.lower().replace(" ", "")
+
         def scan_df(df):
             nonlocal stmt_date, account
+            if df is None or df.empty:
+                return
             # Header scan
             for idx in range(min(df.shape[0], 12)):
                 row = df.iloc[idx].tolist()
@@ -226,7 +230,7 @@ class ExcelMetadataExtractor:
                         if isinstance(acct_val, (int, float)):
                             account = account or str(int(acct_val))
                         elif isinstance(acct_val, str):
-                            m = re.search(r'(\\d{6,})', acct_val.replace(",", ""))
+                            m = re.search(r'(\d{6,})', acct_val.replace(",", ""))
                             account = account or (m.group(1) if m else acct_val.strip())
                     except Exception:
                         pass
@@ -243,7 +247,7 @@ class ExcelMetadataExtractor:
                         if norm and len(norm) >= 10:
                             stmt_date = stmt_date or norm[:10]
                     if "ACCOUNT" in upper and not account:
-                        m = re.search(r'(\\d{6,})', upper.replace(",", ""))
+                        m = re.search(r'(\d{6,})', upper.replace(",", ""))
                         if m:
                             account = m.group(1)
                 if stmt_date and account:
@@ -256,26 +260,26 @@ class ExcelMetadataExtractor:
             df2 = self._load_excel_df(path, sheet_name=1, nrows=80)
             if df2 is not None and not df2.empty:
                 scan_df(df2)
-        # If still missing account/date, try sibling cash/position file in same dir (pairing)
-        path_obj = Path(path)
-        if (not account or not stmt_date) and "Position" in path_obj.name:
-            sibling = next(path_obj.parent.glob("*Cash*.xls*"), None)
-            if sibling and sibling != path_obj:
-                sibling_md = self._parse_gspb(sibling)
-                if sibling_md:
-                    account = account or sibling_md.account_id
-                    stmt_date = stmt_date or sibling_md.statement_date
-        elif (not account or not stmt_date) and "Cash" in path_obj.name:
-            sibling = next(path_obj.parent.glob("*Position*.xls*"), None)
-            if sibling and sibling != path_obj:
-                sibling_md = self._parse_gspb(sibling)
-                if sibling_md:
-                    account = account or sibling_md.account_id
-                    stmt_date = stmt_date or sibling_md.statement_date
-        # Require at least brand + (account or date) to avoid misclassifying TC/others.
-        name_lower = path.name.lower().replace(" ", "")
-        brand_hit = "gspb" in name_lower or "gspb" in path.parent.name.lower().replace(" ", "")
-        if not brand_hit or (not account and not stmt_date):
+
+        # Brand detection:仅表头特征，不用文件名
+        brand_hit = False
+        header_hits = [
+            "CUSTODY POSITION AP",
+            "CUSTODY CASH BALANCES BY ACCOUNT AND ACCOUNT TYPE",
+            "BUSINESS DATE",
+            "REPORT CODE",
+        ]
+        for df_try in (df, locals().get('df2', None)):
+            if df_try is None or df_try.empty:
+                continue
+            for val in df_try.head(8).values.flatten():
+                if isinstance(val, str) and any(h in val.upper() for h in header_hits):
+                    brand_hit = True
+                    break
+            if brand_hit:
+                break
+
+        if not brand_hit or not stmt_date:
             return None
         return ExcelMetadata(broker, account, stmt_date)
 

@@ -7,10 +7,12 @@ Integrates with main FundMate processing pipeline.
 
 import re
 import pandas as pd
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from pathlib import Path
 from loguru import logger
+import csv
+from datetime import datetime
 
 from src.enums import PositionContext
 from src.position import Position
@@ -116,6 +118,11 @@ class ExcelPositionParser:
         if match:
             return match.group(1)
         return None
+
+    def _extract_dbs_archive_date(self, file_path: Path) -> Optional[str]:
+        """Extract statement date from DBS CSV content (preferred over filename)."""
+        payload = self._parse_dbs_cash_csv(str(file_path))
+        return payload.get("statement_date") if payload else None
     
     def parse_ms_file(self, file_path: str) -> List[OptionPosition]:
         """
@@ -364,6 +371,77 @@ class ExcelPositionParser:
         except Exception as e:
             logger.warning(f"Failed to format option symbol: {e}")
             return f"{underlyer} OPTION"
+
+    def _parse_dbs_cash_csv(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """Parse DBS cash-only CSV with strict header guards.
+
+        Expected rows:
+        1) Name of the Bank:,DBS
+        2) Date,MM/DD/YYYY
+        3) USD,<number>
+        4) HKD,<number>
+        5) CNY,<number>
+        """
+        try:
+            with open(file_path, newline="") as f:
+                rows = list(csv.reader(f))
+        except Exception as exc:
+            raise ValueError(f"DBS CSV read error: {exc}")
+
+        if len(rows) < 3:
+            raise ValueError("DBS CSV shape invalid (expected >=3 rows)")
+
+        def _strip_row(row: List[str]) -> List[str]:
+            return [c.strip() for c in row]
+
+        row0 = _strip_row(rows[0])
+        row1 = _strip_row(rows[1]) if len(rows) > 1 else []
+
+        if not (len(row0) >= 2 and row0[0].lower() == "name of the bank:" and row0[1].upper() == "DBS"):
+            raise ValueError("DBS CSV header mismatch")
+
+        if len(row1) < 2 or not row1[1]:
+            raise ValueError("DBS CSV missing Date value")
+
+        try:
+            stmt_date = datetime.strptime(row1[1], "%m/%d/%Y").strftime("%Y-%m-%d")
+        except Exception:
+            raise ValueError(f"DBS CSV unsupported Date format '{row1[1]}' (expect MM/DD/YYYY)")
+
+        currencies = {"USD": None, "HKD": None, "CNY": None}
+        for row in rows[2:]:
+            cells = _strip_row(row)
+            if len(cells) < 2:
+                continue
+            code = cells[0].upper()
+            if code in currencies:
+                currencies[code] = cells[1]
+
+        if currencies["USD"] is None:
+            raise ValueError("DBS CSV missing USD row")
+
+        def _to_float(val: Optional[str]) -> float:
+            if val is None or val == "":
+                return 0.0
+            try:
+                return float(str(val).replace(",", ""))
+            except Exception:
+                raise ValueError(f"DBS CSV invalid numeric value '{val}'")
+
+        usd = _to_float(currencies["USD"])
+        hkd = _to_float(currencies["HKD"])
+        cny = _to_float(currencies["CNY"])
+
+        return {
+            "statement_date": stmt_date,
+            "cash_data": {
+                "USD": usd,
+                "HKD": hkd,
+                "CNY": cny,
+                "Total": None,
+                "Total_type": None,
+            },
+        }
     
     def parse_directory(self, directory_path: str, target_date: Optional[str] = None, archive_mode: bool = False) -> Dict[str, List[Position]]:
         """
@@ -412,12 +490,21 @@ class ExcelPositionParser:
                     logger.error(f"Archive mode requires target_date parameter")
                     raise ValueError("Archive mode requires target_date parameter")
                 
-                # 查找最接近 target_date 的 Excel 文件
+                # 查找最接近 target_date 的 Excel/CSV 文件
                 all_excel_files = list(broker_dir.glob("*.xls")) + list(broker_dir.glob("*.xlsx")) + \
                                  list(broker_dir.glob("*.XLS")) + list(broker_dir.glob("*.XLSX"))
+                if broker_name == "DBS":
+                    all_excel_files += list(broker_dir.glob("*.csv"))
                 dated_files = []
                 for excel_file in all_excel_files:
-                    matched_date = self._extract_archive_date(excel_file.name, broker_name)
+                    if broker_name == "DBS" and excel_file.suffix.lower() == ".csv":
+                        try:
+                            matched_date = self._extract_dbs_archive_date(excel_file)
+                        except Exception as exc:
+                            logger.warning(f"DBS: failed to read date from {excel_file.name}: {exc}")
+                            continue
+                    else:
+                        matched_date = self._extract_archive_date(excel_file.name, broker_name)
                     if matched_date and matched_date <= target_date:
                         dated_files.append((matched_date, excel_file))
                 
@@ -444,11 +531,14 @@ class ExcelPositionParser:
                     search_paths.append(broker_dir)
 
                 # Process Excel files in broker directory (including nested folders)
+                allowed_ext = ['.xls', '.xlsx']
+                if broker_name == "DBS":
+                    allowed_ext.append('.csv')
                 excel_files = [
                     file_path
                     for path in search_paths
                     for file_path in path.rglob("*")
-                    if file_path.is_file() and file_path.suffix.lower() in ['.xls', '.xlsx']
+                    if file_path.is_file() and file_path.suffix.lower() in allowed_ext
                 ]
 
                 if not excel_files:
@@ -459,6 +549,18 @@ class ExcelPositionParser:
             for file_path in excel_files:
                 logger.info(f"Processing Excel file: {file_path}")
                 
+                if broker_name == "DBS" and file_path.suffix.lower() == ".csv":
+                    dbs_payload = self._parse_dbs_cash_csv(str(file_path))
+                    broker_statement_date = dbs_payload.get("statement_date") or broker_statement_date
+                    results[broker_name] = {
+                        "positions": [],
+                        "cash_data": dbs_payload["cash_data"],
+                        "account_id": "CASH",
+                        "statement_date": broker_statement_date or target_date,
+                        "files": [str(f) for f in excel_files]
+                    }
+                    continue
+
                 if broker_name == "MS":
                     positions = self.parse_ms_file(str(file_path))
                 elif broker_name == "GS":
@@ -475,7 +577,8 @@ class ExcelPositionParser:
                             "positions": broker_positions,
                             "cash_data": cash_data,
                             "account_id": account_id,
-                            "statement_date": broker_statement_date or target_date
+                            "statement_date": broker_statement_date or target_date,
+                            "files": [str(f) for f in excel_files]
                         }
                     continue
                 else:
@@ -490,7 +593,8 @@ class ExcelPositionParser:
             if broker_positions and broker_name != "GSPB":
                 results[broker_name] = {
                     "positions": broker_positions,
-                    "statement_date": broker_statement_date or target_date
+                    "statement_date": broker_statement_date or target_date,
+                    "files": [str(f) for f in excel_files]
                 }
         
         return results
