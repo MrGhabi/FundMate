@@ -23,20 +23,21 @@ Core Requirements:
 
 JSON Output Format:
 Return response as valid JSON. ALL NUMERIC VALUES MUST BE NUMBERS, NOT STRINGS.
+
 Structure: {
   "Cash": {
-    "CNY": 123.4, 
-    "HKD": 123.4, 
-    "USD": 123.4, 
-    "Total": 234.5, 
+    "CNY": 123.4,
+    "HKD": 123.4,
+    "USD": 123.4,
+    "Total": 234.5,
     "Total_type": "HKD"
-  }, 
+  },
   "Positions": [
     {
       "StockCode": "AAPL",
       "Description": "Apple Inc",
-      "Holding": 750000, 
-      "Price": 150.50, 
+      "Holding": 750000,
+      "Price": 150.50,
       "PriceCurrency": "USD",
       "Multiplier": 1
     }
@@ -48,6 +49,76 @@ Critical Notes:
 - Use null for missing values, numbers (not strings) for amounts
 - For options: Multiplier is the contract size (per contract), extract if visible in statement
 - Ensure extraction precision as this affects asset calculation accuracy"""
+
+# OpenAI-compatible structured output (preferred).
+# NOTE: Some gateways ignore/partially support response_format; keep JSON parsing fallback anyway.
+STATEMENT_RESPONSE_FORMAT: Dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "BrokerStatementExtraction",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "Cash": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "CNY": {"type": "number", "nullable": True},
+                        "HKD": {"type": "number", "nullable": True},
+                        "USD": {"type": "number", "nullable": True},
+                        "Total": {"type": "number", "nullable": True},
+                        "Total_type": {"type": "string", "nullable": True},
+                    },
+                    "required": ["CNY", "HKD", "USD", "Total", "Total_type"],
+                },
+                "Positions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "StockCode": {"type": "string", "nullable": True},
+                            "Description": {"type": "string", "nullable": True},
+                            "Holding": {"type": "number", "nullable": True},
+                            "Price": {"type": "number", "nullable": True},
+                            "PriceCurrency": {"type": "string", "nullable": True},
+                            "Multiplier": {"type": "number", "nullable": True},
+                        },
+                        "required": [
+                            "StockCode",
+                            "Description",
+                            "Holding",
+                            "Price",
+                            "PriceCurrency",
+                            "Multiplier",
+                        ],
+                    },
+                },
+            },
+            "required": ["Cash", "Positions"],
+        },
+    },
+}
+
+METADATA_RESPONSE_FORMAT: Dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "StatementMetadata",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "BrokerName": {"type": "string", "nullable": True},
+                "AccountId": {"type": "string", "nullable": True},
+                "StatementDate": {"type": "string", "nullable": True},
+            },
+            "required": ["BrokerName", "AccountId", "StatementDate"],
+        },
+    },
+}
 
 
 class LLMHandler:
@@ -70,22 +141,34 @@ class LLMHandler:
     
     def process_pdfs_with_prompt(self, prompt: List[Dict[str, Any]], pdf_paths: List[str]) -> Dict[str, Any]:
         """Backward compatible helper that uses the default system prompt."""
-        return self._process_files(prompt, pdf_paths, system_prompt=SYSTEM_PROMPT)
+        return self._process_files(
+            prompt,
+            pdf_paths,
+            system_prompt=SYSTEM_PROMPT,
+            response_format=STATEMENT_RESPONSE_FORMAT,
+        )
 
     def process_files_with_prompt(
         self,
         prompt: List[Dict[str, Any]],
         file_paths: List[str],
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        response_format: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Generalized entrypoint allowing custom system prompts/files."""
-        return self._process_files(prompt, file_paths, system_prompt=system_prompt or SYSTEM_PROMPT)
+        return self._process_files(
+            prompt,
+            file_paths,
+            system_prompt=system_prompt or SYSTEM_PROMPT,
+            response_format=response_format,
+        )
     
     def _process_files(
         self,
         prompt: List[Dict[str, Any]],
         file_paths: List[str],
-        system_prompt: str
+        system_prompt: str,
+        response_format: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Unified file processing method with retry on JSON parse errors
@@ -118,8 +201,9 @@ class LLMHandler:
             "model": self.model,
             "messages": [{"role": "user", "content": user_content}],
             "temperature": 0,
-            "max_tokens": 8192
         }
+        if response_format:
+            payload["response_format"] = response_format
         
         max_retries = 5
         last_error = None

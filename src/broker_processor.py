@@ -14,7 +14,13 @@ import re
 from src.pdf_processor import PDFProcessor, extract_account_id
 from src.excel_parser import ExcelPositionParser
 from src.price_fetcher import PriceFetcher, get_stock_price
-from src.utils import setup_logging, validate_date_format, print_asset_summary, get_option_multiplier
+from src.utils import (
+    setup_logging,
+    validate_date_format,
+    print_asset_summary,
+    get_option_multiplier,
+    normalize_us_occ_option_code,
+)
 from src.config import settings
 from src.exchange_rate_handler import exchange_handler
 from src.enums import PositionContext
@@ -38,8 +44,8 @@ def extract_occ_code_if_present(stock_code: str) -> str:
     if not stock_code or not isinstance(stock_code, str):
         return stock_code
     
-    # Pattern: TICKER + 6 digits + C/P + 5 digits (OCC format)
-    match = re.search(r'([A-Z]+\d{6}[CP]\d{5})', stock_code)
+    # Pattern: ROOT + 6 digits + C/P + strike digits (OCC/OSI variants)
+    match = re.search(r'([A-Z]{1,6}\d{6}[CP]\d{5,8})', stock_code.upper())
     if match:
         extracted = match.group(1)
         if extracted != stock_code:
@@ -673,10 +679,10 @@ class BrokerStatementProcessor:
             position_dicts = data.get('Positions', [])
             position_list = []
             for pos_dict in position_dicts:
-                # Extract OCC code if present in mixed format
                 stock_code = pos_dict.get('StockCode', '')
-                if stock_code and ' ' in stock_code and re.search(r'\d{6}[CP]\d{5}', stock_code):
+                if stock_code and ' ' in stock_code and re.search(r'\d{6}[CP]\d{5,8}', stock_code):
                     stock_code = extract_occ_code_if_present(stock_code)
+                stock_code = normalize_us_occ_option_code(stock_code)
 
                 holding_value = self._normalize_holding_value(pos_dict.get('Holding', 0))
                 

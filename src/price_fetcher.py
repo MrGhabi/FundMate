@@ -5,7 +5,10 @@ Price Fetcher - Do one thing: get stock prices reliably
 Linux philosophy: Simple, focused, composable
 """
 
-import akshare as ak
+try:
+    import akshare as ak  # type: ignore
+except ImportError:  # pragma: no cover
+    ak = None
 import time
 import re
 from typing import Optional
@@ -36,6 +39,9 @@ def normalize_symbol(raw_symbol: str) -> Optional[str]:
 
 def get_price_akshare(symbol: str, date: str) -> Optional[float]:
     """Get price via akshare"""
+    if ak is None:
+        logger.debug("akshare is not installed; cannot fetch prices via akshare")
+        return None
     try:
         date_str = date.replace('-', '')
         

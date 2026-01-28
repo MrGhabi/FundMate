@@ -89,6 +89,42 @@ def is_option_contract(stock_code: str, raw_description: str = None) -> bool:
     return False
 
 
+def normalize_us_occ_option_code(stock_code: str) -> str:
+    """
+    Normalize US OCC-style option codes to a single canonical representation.
+
+    Background:
+    - For the same contract, LLMs may output different but equivalent strike encodings:
+      - Unpadded:   GOOGL270617C500000
+      - Zero-pad 8: GOOGL270617C00500000
+    - Downstream TC matching previously relied on string equality, so this drift breaks SELL matching.
+
+    Canonical rule (keeps existing historical behavior):
+    - Parse: <ROOT><YYMMDD><C/P><STRIKE_INT>
+    - Re-emit with strike as an integer *minimum width 5* (like Python f"{n:05d}").
+      This preserves small strikes (e.g., 0.50 -> 00500) while removing excessive zero padding.
+
+    If the input does not look like an OCC code, return it unchanged.
+    """
+    if not stock_code or not isinstance(stock_code, str):
+        return stock_code
+
+    code = stock_code.strip().upper()
+
+    # ROOT (1-6 letters) + YYMMDD (6 digits) + C/P + strike digits (5-8 digits typical)
+    m = re.match(r'^([A-Z]{1,6})(\d{6})([CP])(\d{5,8})$', code)
+    if not m:
+        return stock_code
+
+    root, yymmdd, cp, strike_digits = m.groups()
+    try:
+        strike_int = int(strike_digits)
+    except ValueError:
+        return stock_code
+
+    return f"{root}{yymmdd}{cp}{strike_int:05d}"
+
+
 def get_option_multiplier(stock_code: str, raw_description: str = None, broker_multiplier: int = None) -> int:
     """
     Get the correct multiplier for position value calculation

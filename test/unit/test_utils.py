@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from utils import (
     is_option_contract,
     _identify_hk_option,
+    normalize_us_occ_option_code,
     get_option_multiplier,
     calculate_position_value,
     is_money_market_fund
@@ -57,6 +58,24 @@ class TestOptionDetection:
         """Use raw description for detection"""
         assert is_option_contract("XXX", "TSLA CALL OPTION") is True
         assert is_option_contract("XXX", "Regular stock") is False
+
+
+class TestOCCNormalization:
+    """Test normalization for US OCC-style option codes."""
+
+    def test_normalize_us_occ_option_code_keeps_unpadded(self):
+        assert normalize_us_occ_option_code("GOOGL270617C500000") == "GOOGL270617C500000"
+
+    def test_normalize_us_occ_option_code_strips_excess_padding(self):
+        # Same strike encoding, different padding (LLM may output either)
+        assert normalize_us_occ_option_code("GOOGL270617C00500000") == "GOOGL270617C500000"
+
+    def test_normalize_us_occ_option_code_preserves_min_width_5(self):
+        # 0.50 strike -> 500 (x1000). OSI form may be 8 digits; canonical keeps 5 digits.
+        assert normalize_us_occ_option_code("SBET260116P00000500") == "SBET260116P00500"
+
+    def test_normalize_us_occ_option_code_non_occ_unchanged(self):
+        assert normalize_us_occ_option_code("HOOD US 12/19/25 C135") == "HOOD US 12/19/25 C135"
 
 
 class TestHKOptionDetection:
@@ -222,4 +241,3 @@ class TestMMFDetection:
     def test_is_money_market_fund_empty_string(self):
         """Handle empty string"""
         assert is_money_market_fund("") is False
-

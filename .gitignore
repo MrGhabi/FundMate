@@ -38,3 +38,10 @@ fundmate.egg-info
 archives/
 
 .pytest_cache
+
+node_modules
+doc
+tools/futu/futu_output.log
+claude.md
+package.json
+package-lock.json

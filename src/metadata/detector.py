@@ -22,7 +22,7 @@ except ImportError:  # pragma: no cover
     PdfReader = None
 
 import tempfile
-from src.llm_handler import LLMHandler
+from src.llm_handler import LLMHandler, METADATA_RESPONSE_FORMAT
 from src.metadata.excel_parser import ExcelMetadataExtractor
 from src.pdf_processor import BROKER_CONFIG
 
@@ -110,6 +110,7 @@ class StatementMetadataDetector:
             build_metadata_prompt(pdf_path.name),
             [str(pdf_path)],
             system_prompt=METADATA_SYSTEM_PROMPT,
+            response_format=METADATA_RESPONSE_FORMAT,
         )
         broker = self._safe_get(llm_result, ["BrokerName", "broker", "broker_name"])
         account = self._safe_get(llm_result, ["AccountId", "account", "account_id"])

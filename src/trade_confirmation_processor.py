@@ -22,6 +22,7 @@ from src.config import settings
 from src.enums import PositionContext, OptionType
 from src.position import Position
 from src.option_parser import parse_option
+from src.utils import normalize_us_occ_option_code
 
 
 @dataclass
@@ -88,6 +89,8 @@ class TradeConfirmationProcessor:
         """
         if not stock_code:
             return stock_code
+
+        stock_code = normalize_us_occ_option_code(stock_code)
 
         # First normalize simple equity codes (e.g., 1263 HK -> 01263)
         stock_code = self._normalize_equity_code(stock_code)
