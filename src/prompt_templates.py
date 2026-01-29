@@ -1,3 +1,12 @@
+"""
+LLM prompt templates for broker statement processing.
+
+Developer Notes (migrated from docs/src/prompt_templates.py.md):
+- Stores broker-specific prompt templates for extracting cash/positions from PDFs.
+- Templates are consumed by `LLMHandler` / `PDFProcessor`.
+- Template changes can break downstream parsing; keep field names and JSON structure aligned with `pdf_processor.py`.
+"""
+
 PROMPT_TEMPLATES = {
     "CICC": 
     [{"type": "text", 

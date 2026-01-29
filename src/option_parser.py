@@ -3,6 +3,12 @@ Option Parser Module
 
 Provides a pluggable parser architecture for handling various option formats.
 Uses ABC pattern for parser interface and registry pattern for extensibility.
+
+Developer Notes (migrated from docs/src/option_parser.py.md):
+- `parse_option()` runs registered parsers in order (US OCC, HKATS, long formats, OTC) and returns a `ParsedOption` or `UNPARSEABLE`.
+- Parser order matters and should remain deterministic to avoid run-to-run drift.
+- TC mode may register additional parsers (e.g., `HKNumericParser`) to resolve numeric HK codes into HKATS before matching.
+- US OCC-like short codes may appear with equivalent strike encodings (leading zeros / width drift); `USOCCParser` is designed to parse these into identical fields.
 """
 
 from abc import ABC, abstractmethod
@@ -159,7 +165,27 @@ class USOCCParser(OptionParser):
     """
     Parse US OCC (Options Clearing Corporation) format
     
-    Format: TICKER + YYMMDD + C/P + STRIKE*1000 (5 digits)
+    FundMate canonical OCC-like short format (project convention):
+      <ROOT><YYMMDD><C/P><STRIKE_INT>
+
+    Where:
+      - ROOT: underlying ticker/root (commonly 1-6 uppercase letters)
+      - YYMMDD: expiry date
+      - C/P: option type
+      - STRIKE_INT: int(round(strike * 1000))
+
+    Notes:
+      - In the wild, the same contract may appear with different strike encodings:
+        - Unpadded/minimal:   GOOGL270617C500000
+        - OSI-like zero-pad:  GOOGL270617C00500000
+      - We accept 5-8 strike digits here so `parse_option()` can unify parsed fields
+        even when upstream outputs drift between equivalent representations.
+
+    Strike digit width:
+      - Historically this project used 5 digits in examples (e.g., 41000 for $41.0),
+        but real statements/LLM outputs can include 6-8 digits for higher strikes or
+        OSI-style padding. This parser intentionally supports 5-8 digits.
+
     Example: SBET260116P41000
       - SBET: ticker
       - 260116: expiry 2026-01-16
@@ -169,11 +195,11 @@ class USOCCParser(OptionParser):
     
     def can_parse(self, code: str) -> bool:
         """Check if matches OCC format"""
-        return bool(re.match(r'^[A-Z]{1,4}\d{6}[CP]\d{5}$', code))
+        return bool(re.match(r'^[A-Z]{1,6}\d{6}[CP]\d{5,8}$', code))
     
     def parse(self, code: str) -> ParsedOption:
         """Parse OCC format"""
-        match = re.match(r'^([A-Z]{1,4})(\d{2})(\d{2})(\d{2})([CP])(\d{5})$', code)
+        match = re.match(r'^([A-Z]{1,6})(\d{2})(\d{2})(\d{2})([CP])(\d{5,8})$', code)
         if not match:
             raise ValueError(f"Invalid OCC format: {code}")
         

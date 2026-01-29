@@ -3,6 +3,11 @@
 Excel position data parser for broker statements.
 Extracts option position data from MS and GS Excel files.
 Integrates with main FundMate processing pipeline.
+
+Developer Notes (migrated from docs/src/excel_parser.py.md):
+- Parses broker Excel statements (positions/cash) and converts them into `ProcessedResult`-compatible outputs.
+- `ExcelPositionParser.parse_directory(...)` scans a folder (including archive mode) and applies broker-specific templates.
+- BrokerStatementProcessor merges Excel-derived results with PDF-derived results for the same broker/account/date.
 """
 
 import re
@@ -485,12 +490,12 @@ class ExcelPositionParser:
             broker_statement_date: Optional[str] = None
             
             if archive_mode:
-                # 归档模式：从文件名过滤
+                # Archive mode: filter by filename dates.
                 if not target_date:
                     logger.error(f"Archive mode requires target_date parameter")
                     raise ValueError("Archive mode requires target_date parameter")
                 
-                # 查找最接近 target_date 的 Excel/CSV 文件
+                # Pick the nearest statement date <= target date (Excel/CSV).
                 all_excel_files = list(broker_dir.glob("*.xls")) + list(broker_dir.glob("*.xlsx")) + \
                                  list(broker_dir.glob("*.XLS")) + list(broker_dir.glob("*.XLSX"))
                 if broker_name == "DBS":
@@ -519,7 +524,7 @@ class ExcelPositionParser:
                 excel_files.append(excel_file)
                 broker_statement_date = matched_date
             else:
-                # Statement模式：原有逻辑
+                # Statement mode: original directory-based structure.
                 # Determine search paths (prefer date-specific folder if provided)
                 search_paths = []
                 if target_date:

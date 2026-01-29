@@ -2,6 +2,10 @@
 """
 HK Option Price Helper - Futu API Integration
 Provides price data for HK options using Futu API
+
+Developer Notes (migrated from docs/src/hk_option_price_helper.py.md):
+- Parses HKATS option descriptions (underlying, expiry, strike, call/put) and constructs Futu option codes.
+- `get_hk_option_price_from_futu(...)` returns a historical price when available; upstream code must apply correct multipliers.
 """
 
 from typing import Optional, Tuple

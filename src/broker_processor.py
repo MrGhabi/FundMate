@@ -1,6 +1,14 @@
 """
 Core broker statement processor module.
 Contains the main business logic for processing broker statements and orchestrating the workflow.
+
+Developer Notes (migrated from docs/src/broker_processor.py.md):
+- Main entrypoint for processing broker statements (PDF + Excel) into `ProcessedResult` objects for persistence/TC.
+- `extract_occ_code_if_present()` extracts OCC-like option codes from mixed strings to improve matching stability.
+- `ProcessedResult` standardizes per-broker outputs (cash, positions, `usd_total`, `statement_date`, pricing fields).
+- `BrokerStatementProcessor.process_folder()` orchestrates validation → logging → FX → concurrent PDF parsing → Excel parsing → merge → cross-broker pricing → summary → probe hooks.
+- Archive mode affects Excel parsing and base-date inference; missing target-date statements may fall back to the nearest prior date.
+- Probe integration (`probe.mark_broker_*`, `probe.set_broker_financials`) powers the Web UI progress table.
 """
 
 from pathlib import Path
@@ -200,7 +208,7 @@ class BrokerStatementProcessor:
             List of ProcessedResult objects with Excel position data
         """
         try:
-            # 检测归档模式并传递给 Excel parser
+            # Detect archive mode and pass it into the Excel parser.
             archive_mode = self._is_archive_mode(broker_folder)
             
             # Parse Excel data using ExcelPositionParser
@@ -420,15 +428,20 @@ class BrokerStatementProcessor:
     
     def _is_archive_mode(self, broker_folder: str) -> bool:
         """
-        检测是否为归档模式（通过路径判断）
-        归档模式：路径包含 'archives'
+        Detect whether we are running in archive mode based on the path.
+
+        Archive mode is detected when the path contains an `archives` segment.
         """
         return 'archives' in Path(broker_folder).parts
     
     def _extract_archive_date(self, filename: str, broker: str) -> Optional[str]:
         """
-        提取归档文件名中的日期，格式 {BROKER}_{YYYY-MM-DD}_{ID}.ext
-        返回 YYYY-MM-DD 字符串或 None
+        Extract the statement date from an archived filename.
+
+        Expected format: `{BROKER}_{YYYY-MM-DD}_{ID}.ext`
+
+        Returns:
+            The `YYYY-MM-DD` date string, or None if not found.
         """
         pattern = rf"{re.escape(broker)}_(\d{{4}}-\d{{2}}-\d{{2}})_.*"
         match = re.match(pattern, filename, re.IGNORECASE)
@@ -466,7 +479,7 @@ class BrokerStatementProcessor:
             logger.warning(f"PDF root directory does not exist: {pdf_root}")
             return []
         
-        # 检测归档模式
+        # Detect archive mode.
         archive_mode = self._is_archive_mode(pdf_root)
         if archive_mode:
             logger.info("📦 Using ARCHIVE mode (file name based filtering)")
@@ -491,16 +504,16 @@ class BrokerStatementProcessor:
             if broker_filter and broker_name.upper() != broker_filter.upper():
                 continue
             
-            # 根据模式选择不同的文件查找逻辑
+            # Select file discovery logic based on mode.
             pdf_files = []
             
             if archive_mode:
-                # 归档模式：从券商目录查找匹配日期的文件
+                # Archive mode: find files from broker dir by filename dates.
                 if not date:
                     logger.error(f"Archive mode requires --date parameter")
                     raise ValueError("Archive mode requires date parameter")
                 
-                # 查找最接近 target_date 的 PDF
+                # Pick the nearest statement date <= target date.
                 all_pdfs = list(broker_dir.glob("*.pdf"))
                 dated_files = []
                 for pdf_file in all_pdfs:
@@ -532,7 +545,7 @@ class BrokerStatementProcessor:
                     pdf_files.append((matched_date, pdf_file))
                     
             else:
-                # Statement模式：原有逻辑
+                # Statement mode: original directory-based structure.
                 # Determine search paths (prefer date-specific folder if available)
                 search_paths = []
                 if date:

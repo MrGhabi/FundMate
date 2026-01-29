@@ -6,15 +6,15 @@
 
 ## Quick Links
 
-- 📘 [Developer Guide](docs/DEV.md) — architecture, directory layout, CLI/TC/Web details, env vars, troubleshooting.
-- 🤖 [Agent Onboarding](AGENTS.md) — pipeline decisions and testing philosophy for AI/automation agents.
+- 📘 [Developer Guide](AGENTS.md#fundmate-developer-guide) — architecture, directory layout, CLI/TC/Web details, env vars, troubleshooting.
+- 🤖 [Agent Onboarding](AGENTS.md#agent-onboarding-notes-for-fundmate) — pipeline decisions and testing philosophy for AI/automation agents.
 - 🗂️ Metadata/archiving tools: `src.metadata.detector` + `src.metadata.organizer` (keeps multiple broker/date/account files by suffixing `_cash`/`_position` to avoid overwrites).
 
 ## Highlights
 
 - **Multi-format ingestion**: PDF (LLM OCR) + Excel statements unified into `Position` objects and cash buckets.
 - **Incremental TC mode**: Apply trade confirmations on top of a base portfolio, with HK numeric option matching + cached baselines.
-- **Real-time pricing**: Futu OpenD first, akshare fallback; money market funds auto-reclassified into cash.
+- **Real-time pricing**: Futu OpenD first; `akshare` path exists but is deprecated. Money market funds auto-reclassified into cash.
 - **Structured persistence**: Daily parquet/CSV outputs + summary metrics for downstream analytics.
 - **Optional Flask UI**: Browse processed portfolios directly from `./out/result/<date>`.
 
@@ -44,8 +44,8 @@ python -m pytest test/e2e/test_tc_mode.py -vv         # cached TC regression
 python -m src.webapp.app
 ```
 
-The UI reads the persisted outputs under `./out/result/<date>`. Gunicorn deployments and template/static packaging details live in [docs/DEV.md](docs/DEV.md#6-web-ui).
+The UI reads the persisted outputs under `./out/result/<date>`. Gunicorn deployments and template/static packaging details live in [AGENTS.md](AGENTS.md#6-web-ui).
 
 ---
 
-For everything else—detailed CLI options, directory conventions, environment variables, testing matrix, data archiving tool—consult the [Developer Guide](docs/DEV.md). The previous long-form README content has been moved there verbatim for easier maintenance.
+For everything else—detailed CLI options, directory conventions, environment variables, testing matrix, data archiving tool—consult the [Developer Guide](AGENTS.md#fundmate-developer-guide). The previous long-form README content has been merged there to keep a single source of truth.

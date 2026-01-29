@@ -41,7 +41,10 @@ archives/
 
 node_modules
 doc
+docs
 tools/futu/futu_output.log
 claude.md
 package.json
 package-lock.json
+
+.codex

@@ -2,6 +2,13 @@
 """
 Gemini LLM Handler - Simplified Version
 Clean Gemini handler focused on direct PDF processing
+
+Developer Notes (migrated from docs/src/llm_handler.py.md):
+- Wraps an LLM client (Gemini/OpenAI-compatible gateway) for PDF/text extraction into structured JSON.
+- `LLMHandler.__init__()` reads model + endpoint configuration from environment variables (and an optional `model` override).
+- `send_request()` handles retries, logging, and error propagation; failures should be handled by upstream processors.
+- `parse_pdf_with_prompt()` reads PDF bytes and sends them with a broker-specific prompt template (used by `pdf_processor.py`).
+- Requires valid API credentials and a reachable gateway endpoint in the runtime environment.
 """
 
 import os

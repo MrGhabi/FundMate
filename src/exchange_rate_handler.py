@@ -2,6 +2,14 @@
 """
 Exchange Rate Handler - Centralized exchange rate management
 Handles API calls, caching, and currency conversion
+
+Developer Notes (migrated from docs/src/exchange_rate_handler.py.md):
+- Central FX utility with dual-layer caching (memory + `out/exchange_rates_cache.json`).
+- `get_single_rate()` enforces basic rate limiting and raises on API failures/invalid rates.
+- `get_rates_dynamic()` fetches only currencies needed for a run; `get_rates_legacy()` preserves the historical default set (`CNY/HKD/TWD → USD`).
+- `get_rate_lazy()` fetches a single rate on demand (commonly used by `utils.py` / `price_fetcher.py`).
+- `convert_to_usd()` is a convenience conversion helper; persistence code may enforce stricter fail-fast behavior.
+- `exchange_handler` is the shared singleton to maximize cache reuse across modules.
 """
 
 import json
@@ -109,7 +117,7 @@ class ExchangeRateHandler:
         Uses dynamic fetching for common currencies
         """
         # Common currencies for backward compatibility
-        common_currencies = ['CNY', 'HKD']
+        common_currencies = ['CNY', 'HKD', 'TWD']
         return self.get_rates_dynamic(common_currencies, 'USD', date)
     
     def get_rate_lazy(self, from_currency: str, to_currency: str = 'USD', date: str = None) -> float:

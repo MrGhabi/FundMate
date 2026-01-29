@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Statement metadata detector for uploaded broker files."""
+"""
+Statement metadata detector for uploaded broker files.
+
+Developer Notes (migrated from docs/src/metadata/detector.py.md):
+- Detects broker/account/date metadata for statement files and outputs normalized `StatementMetadata` records for the organizer.
+- `CANONICAL_BROKER_KEYWORDS` maps canonical broker keys to keywords; keep it in sync with the Web UI broker patterns.
+- Sources: PDF metadata via LLM (`source="llm"`), Excel via structured parsing (`excel_structured`), DBS cash CSV via header probe (`csv_header`), or `error`.
+- Supports PDF decryption for detection using `BROKER_CONFIG` passwords and writes decrypted temp copies when needed.
+- Includes date normalization and broker canonicalization helpers to reduce drift across vendors.
+- CLI entrypoint can emit JSONL for `src.metadata.organizer` to consume.
+"""
 
 from __future__ import annotations
 

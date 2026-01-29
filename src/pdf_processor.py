@@ -3,6 +3,13 @@
 PDF Processor - Simple and Robust
 Direct PDF processing for broker statements without image conversion.
 Follows Linus's design principles: simple, efficient, and maintainable.
+
+Developer Notes (migrated from docs/src/pdf_processor.py.md):
+- Processes broker PDFs without converting to images; uses broker-specific page filtering to reduce LLM cost.
+- `extract_account_id()` extracts account identifiers using broker-specific filename patterns.
+- `filter_page_indices()` selects the pages to keep (e.g., removing summary/legal tail pages).
+- `PDFProcessor.process_pdf()` decrypts (when configured), filters pages, calls the LLM with templates, caches processed PDFs, and returns structured cash/positions payloads.
+- Exceptions bubble up to the caller to decide retries and error handling.
 """
 
 import os
@@ -56,7 +63,7 @@ def extract_account_id(pdf_path: Path, broker_name: str) -> str:
         if match:
             return match.group(1)
     
-    # MOOMOO: 客户对账单_1234567890_20240701.pdf
+    # MOOMOO: account statement filename pattern, e.g. "<prefix>_1234567890_20240701.pdf"
     elif broker == "MOOMOO":
         parts = filename.split('_')
         if len(parts) >= 2:

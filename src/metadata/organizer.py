@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Organize statement files into canonical naming based on metadata JSONL."""
+"""
+Organize statement files into canonical naming based on metadata JSONL.
+
+Developer Notes (migrated from docs/src/metadata/organizer.py.md):
+- Moves statement files into a canonical archive layout keyed by broker/date/account and avoids overwrites via variant naming.
+- Computes SHA-256 hashes (when archiving into `data/archives`) to de-duplicate identical content.
+- Special-cases some brokers (e.g., GSPB) that ship separate cash/position workbooks and merges them into a single Excel.
+- CLI consumes JSONL produced by `src.metadata.detector` and writes the organized outputs into the requested directory.
+"""
 
 from __future__ import annotations
 
@@ -58,7 +66,7 @@ def organize_files(records: list[MetadataRecord], output_dir: Path, dry_run: boo
     merged_records: List[MetadataRecord] = []
     records_to_skip: set[Tuple[Path, Optional[str], Optional[str], Optional[str]]] = set()
 
-    # Group by (broker_name, statement_date) — account_id 不参与分组，避免多账号混淆
+    # Group by (broker_name, statement_date). Account ID is excluded to avoid mixing multi-account variants.
     groups: Dict[Tuple[Optional[str], Optional[str]], List[MetadataRecord]] = {}
     for record in records:
         key = (record.broker_name, record.statement_date)
@@ -80,7 +88,7 @@ def organize_files(records: list[MetadataRecord], output_dir: Path, dry_run: boo
         if not excel_records:
             continue
 
-        # 通过表头判定 Position/Cash；不依赖文件名/账号
+        # Detect Position/Cash by sheet headers; do not rely on filename/account_id.
         def _detect_kind(path: Path) -> str:
             try:
                 import pandas as pd
@@ -116,7 +124,7 @@ def organize_files(records: list[MetadataRecord], output_dir: Path, dry_run: boo
             else:
                 unknown_records.append(r)
 
-        # 整组计数：同一日期若 P_total!=1 或 C_total!=1，则整组跳过
+        # Whole-group rule: if a date does not have exactly 1 position file and 1 cash file, skip the merge.
         if not (len(pos_records) == 1 and len(cash_records) == 1):
             logger.warning(
                 "GSPB merge skipped for %s: require exactly 1 pos + 1 cash in this date (P=%s, C=%s, U=%s). Files kept for manual handling.",

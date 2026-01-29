@@ -1,6 +1,15 @@
 """
 Utility functions for FundMate broker statement processor.
 Contains helper functions for validation, logging, and display formatting.
+
+Developer Notes (migrated from docs/src/utils.py.md):
+- Option detection: `is_option_contract()` covers keywords plus OCC-like short codes (e.g., `SBET260116P25000`).
+- HK option detection: `_identify_hk_option()` recognizes HKATS-like descriptions (e.g., `CLI 250929 19.00 CALL`) and is used as a fallback when brokers omit multipliers.
+- US OCC normalization: `normalize_us_occ_option_code()` canonicalizes equivalent OCC-like strings to reduce matching failures.
+- Multipliers: `get_option_multiplier()` prioritizes broker-provided multipliers, then infers defaults (US/HK options typically 100, OTC stays 1).
+- Valuation: `calculate_position_value()` applies multiplier logic and returns `(value, multiplier_used)` to keep pricing auditable.
+- Reporting: `print_asset_summary()` aggregates by broker and across brokers; options use `raw_description` as the unique key to avoid collapsing distinct contracts.
+- Cash reclassification: `is_money_market_fund()` is used by persistence to move MMF positions into cash.
 """
 
 import os

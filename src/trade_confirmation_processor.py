@@ -3,6 +3,17 @@ Trade Confirmation Processor
 Incremental portfolio update based on trade confirmation files.
 
 All comments in English as per requirement.
+
+Developer Notes (migrated from docs/src/trade_confirmation_processor.py.md):
+- TC mode updates a base portfolio snapshot by parsing TC Excel files and applying transactions within a broker-specific date window.
+- `Transaction` is the normalized record (date, broker, stock_code, direction, quantity, avg_price, amount_usd, currency, market).
+- Code normalization helpers (`standardize_option_format`, `_normalize_equity_code`, `_remove_leading_prefix`) reduce mismatches between TC symbols and base holdings.
+- `_parse_tc_excel()` validates required columns, normalizes SELL/SELLSHORT semantics, strips routing/Bloomberg suffixes, and normalizes cash impact to USD.
+- `_apply_transactions()` filters by `(statement_date, target_date]` by default; `inclusive_start_brokers` (e.g. `LB`) uses `[statement_date, target_date]` to avoid missing same-day trades.
+- `_apply_buy()` adds/creates positions and subtracts USD cash; `_apply_sell()` supports short sales (negative holdings) and prevents accidental sells without a base position.
+- `_find_position()` matches positions using normalized codes plus option-parser fuzzy matching (underlying/expiry/strike/type).
+- `_update_prices()` fetches unique symbols and fills `final_price` / `optimized_price_currency`; fallback order is Futu price → TC avg price → broker price.
+- TC parsing caches the first seen transaction price per symbol to support deterministic fallback pricing when market data is missing.
 """
 
 from dataclasses import dataclass

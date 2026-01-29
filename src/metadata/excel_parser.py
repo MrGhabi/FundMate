@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Excel metadata extractor for broker statements."""
+"""
+Excel metadata extractor for broker statements.
+
+Developer Notes (migrated from docs/src/metadata/excel_parser.py.md):
+- Extracts broker/account/statement-date metadata from Excel statements to drive canonical archiving decisions.
+- Uses broker-specific heuristics (headers/branding) and returns `None` when the format cannot be recognized.
+- Designed to work together with `src.metadata.organizer` so files land in the correct archive subfolders.
+"""
 
 from __future__ import annotations
 
@@ -261,7 +268,7 @@ class ExcelMetadataExtractor:
             if df2 is not None and not df2.empty:
                 scan_df(df2)
 
-        # Brand detection:仅表头特征，不用文件名
+        # Brand detection: rely on header patterns only, not the filename.
         brand_hit = False
         header_hits = [
             "CUSTODY POSITION AP",

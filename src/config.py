@@ -4,6 +4,11 @@ Configuration settings for FundMate
 
 Centralized configuration with environment variable support.
 Simple and practical approach - no over-engineering.
+
+Developer Notes (migrated from docs/src/config.py.md):
+- Defines a simple settings object loaded from environment variables (optionally via `.env` in local setups).
+- Covers output/log paths, exchange-rate endpoint/key, pricing source selection, and Futu OpenD connection details.
+- Changes to `.env` generally require restarting the process to take effect.
 """
 
 import os

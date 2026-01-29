@@ -3,6 +3,14 @@
 Price Fetcher - Do one thing: get stock prices reliably
 
 Linux philosophy: Simple, focused, composable
+
+Developer Notes (migrated from docs/src/price_fetcher.py.md):
+- Normalizes raw broker symbols via `normalize_symbol()` before querying price sources.
+- Supports historical prices via Futu (`get_price_futu`) and an optional `akshare` path (deprecated).
+- `get_stock_price()` is the unified entrypoint for both equities and options; it uses `raw_description` to improve option parsing when needed.
+- `calculate_portfolio_value()` bulk-prices holdings and returns both priced rows and failures for audit.
+- Includes Morgan-style option helpers (`parse_morgan_option`, `find_closest_futu_option`, `get_option_price_futu`) for OTC/long formats.
+- Option multipliers are expected from upstream (`Position` / TC) or inferred defaults; pricing failures should fall back to broker/TC values at higher layers.
 """
 
 try:

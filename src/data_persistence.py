@@ -1,6 +1,13 @@
 """
 Data persistence module for broker statement processing results.
 Saves processed broker data using Pandas and Parquet format for efficient storage and analysis.
+
+Developer Notes (migrated from docs/src/data_persistence.py.md):
+- Persists daily outputs: `cash_summary_*.parquet`, `positions_*.parquet`, `portfolio_details_*.csv`, and `metadata_*.json`.
+- `save_processing_results(...)` is the main entrypoint; it reclassifies money market funds into cash before saving.
+- Totals are computed using per-currency cash + position values; non-USD currencies require an explicit FX rate for the run date.
+- FX is fail-fast for persistence: any non-USD currency (cash or `optimized_price_currency`) missing an FX rate raises to avoid silent 1:1 mispricing.
+- Money-market classification depends on `utils.is_money_market_fund`; keep patterns updated to prevent MMF leaking into `TOTAL_POSITIONS`.
 """
 
 import pandas as pd
@@ -150,13 +157,33 @@ class DataPersistence:
                 
                 # Convert HKD to USD
                 hkd = result.cash_data.get('HKD', 0) or 0
-                if hkd and 'HKD' in exchange_rates:
+                if hkd:
+                    if 'HKD' not in exchange_rates:
+                        raise ValueError(
+                            f"Missing exchange rate for HKD→USD on {date} "
+                            f"(broker={result.broker_name}, account_id={result.account_id})"
+                        )
                     usd_total += float(hkd) * exchange_rates['HKD']
                 
                 # Convert CNY to USD
                 cny = result.cash_data.get('CNY', 0) or 0
-                if cny and 'CNY' in exchange_rates:
+                if cny:
+                    if 'CNY' not in exchange_rates:
+                        raise ValueError(
+                            f"Missing exchange rate for CNY→USD on {date} "
+                            f"(broker={result.broker_name}, account_id={result.account_id})"
+                        )
                     usd_total += float(cny) * exchange_rates['CNY']
+
+                # Convert TWD to USD (if present)
+                twd = result.cash_data.get('TWD', 0) or 0
+                if twd:
+                    if 'TWD' not in exchange_rates:
+                        raise ValueError(
+                            f"Missing exchange rate for TWD→USD on {date} "
+                            f"(broker={result.broker_name}, account_id={result.account_id})"
+                        )
+                    usd_total += float(twd) * exchange_rates['TWD']
                 
                 result.usd_total = usd_total
                 logger.info(f"🔄 Recalculated usd_total after MMF reclassification: ${usd_total:,.2f}")
@@ -195,6 +222,7 @@ class DataPersistence:
                 # Calculate USD value using the same logic as print_asset_summary
                 position_value_usd = None
                 if position.final_price:
+                    position_value = None
                     try:
                         position_value, _ = calculate_position_value(
                             price=position.final_price,
@@ -203,17 +231,22 @@ class DataPersistence:
                             raw_description=position.raw_description,
                             broker_multiplier=position.multiplier
                         )
-                        
-                        # Convert to USD if needed
-                        price_currency = position.optimized_price_currency or 'USD'
-                        if price_currency != 'USD' and position_value != 0:
-                            rate = exchange_rates.get(price_currency, 1.0)
-                            position_value_usd = position_value * rate
-                        else:
-                            position_value_usd = position_value
-                            
                     except Exception as e:
                         logger.warning(f"Failed to calculate value for {position.stock_code}: {e}")
+
+                    if position_value is not None:
+                        # Convert to USD if needed (fail-fast on missing rates)
+                        price_currency = (position.optimized_price_currency or 'USD').upper()
+                        if price_currency != 'USD' and position_value != 0:
+                            if price_currency not in exchange_rates:
+                                raise ValueError(
+                                    f"Missing exchange rate for {price_currency}→USD on {date} "
+                                    f"(broker={result.broker_name}, account_id={result.account_id}, "
+                                    f"stock_code={position.stock_code})"
+                                )
+                            position_value_usd = position_value * exchange_rates[price_currency]
+                        else:
+                            position_value_usd = position_value
                 
                 position_row = {
                     # Basic info

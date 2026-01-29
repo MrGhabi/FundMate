@@ -1,6 +1,11 @@
 """
 Lightweight probe logger for pipeline runs.
 Collects per-broker files/metrics and global timing, writes to temp for analysis.
+
+Developer Notes (migrated from docs/src/probe.py.md):
+- Tracks pipeline progress/state for the Web UI (overall %, per-broker status, file counts, TC file list).
+- Lifecycle: `start()` → broker updates (`mark_broker_*`, `set_broker_financials`, file records) → `finalize()`.
+- Snapshots are exposed via `get_data()` / `get_brokers()`; `_compute_progress` / `_push_progress` handle derived progress and callbacks.
 """
 
 from __future__ import annotations

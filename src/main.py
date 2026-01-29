@@ -1,6 +1,12 @@
 """
 FundMate - Broker Statement Processor
 Main entry point with command-line interface for processing broker statements.
+
+Developer Notes (migrated from docs/src/main.py.md):
+- CLI entrypoint: parses args (date, broker filter, archive/TC dirs, concurrency) and runs base mode or TC mode end-to-end.
+- `infer_base_date_from_broker_folder()` selects a base date from folder naming (statement mode) or archive filenames (latest ≤ target date).
+- Base mode runs `BrokerStatementProcessor.process_folder()`.
+- TC mode runs base processing with `skip_logging_setup=True`, then applies TC via `TradeConfirmationProcessor.process_with_trade_confirmation()`.
 """
 
 import sys

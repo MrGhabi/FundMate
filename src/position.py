@@ -3,6 +3,12 @@ Position Module
 
 Defines the unified Position class for representing portfolio positions.
 Automatically parses option contracts on initialization.
+
+Developer Notes (migrated from docs/src/position.py.md):
+- `Position` is the normalized holding model (stocks + options) used across brokers and TC mode.
+- Option metadata is parsed via `option_parser.parse_option()` during initialization; matching prefers parsed fields, not raw strings.
+- `matches_option()` compares underlying/expiry/strike/type for fuzzy matching during TC reconciliation.
+- `multiplier` materially affects valuation; prefer broker-provided multipliers when available and keep defaults conservative.
 """
 
 from dataclasses import dataclass, field

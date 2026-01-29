@@ -2,6 +2,9 @@
 Type definitions for the project
 
 This module contains shared type definitions, including enums.
+
+Developer Notes (migrated from docs/src/enums.py.md):
+- `PositionContext` labels the origin of a position (`BASE` snapshot vs `TC` incremental) for traceability and debugging.
 """
 from enum import Enum
 
@@ -76,4 +79,3 @@ class OptionType(Enum):
             return cls.PUT
         else:
             raise ValueError(f"Invalid option type: {value}. Expected CALL/C or PUT/P")
-

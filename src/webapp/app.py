@@ -1,6 +1,15 @@
 """
 FundMate Web Application
 A Flask-based web interface for viewing and analyzing financial portfolio data
+
+Developer Notes (migrated from docs/src/webapp/app.py.md):
+- Provides upload + archive workflows, runs the main pipeline by date, and renders results from `./out/result/<date>`.
+- Broker detection patterns must stay consistent with `src.metadata.detector.CANONICAL_BROKER_KEYWORDS`.
+- Upload flow supports ZIP/RAR extraction with skip rules (`__MACOSX`, `.DS_Store`, `._*`) and path traversal protection.
+- Archiving copies uploads into `ARCHIVE_DIR` / `TC_DIR` with SHA-256 de-duplication to prevent double ingestion.
+- Job status/progress is tracked in-memory and persisted to `temp/job_history.jsonl` for replay in the UI.
+- Pipeline runs integrate with `src.probe` to stream broker-level progress and financial totals back to the frontend.
+- Exposes JSON APIs for job status, date summaries, and running calculations; UI pages load/parsing parquet outputs.
 """
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, flash

@@ -2,6 +2,10 @@
 """
 US Option Price Helper - Futu API Integration
 Provides price and multiplier data for US options using Futu API
+
+Developer Notes (migrated from docs/src/us_option_price_helper.py.md):
+- Parses US option descriptions to extract underlying/expiry/strike/type.
+- `get_us_option_price_from_futu(...)` normalizes codes, queries Futu historical prices, and returns `(price, multiplier)` (typically multiplier=100).
 """
 
 from typing import Optional, Tuple
